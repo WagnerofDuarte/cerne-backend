@@ -60,13 +60,13 @@ Este arquivo transforma os três documentos de planejamento em uma lista de tare
 
 - [x] `T-007` Criar a estrutura de diretórios do repositório (`supabase/`, `contracts/`, `tests/`, `fixtures/`, `docs/`, `scripts/`, `.github/workflows/` — ver Seção 2 do plano técnico) — **Critério:** `tree` bate com a especificação.
 
-- [ ] 🔴 **[MANUAL] `T-008` / `GATE-07`** — Cadastrar os secrets no GitHub Actions
+- [x] 🔴 **[MANUAL] `T-008` / `GATE-07`** — Cadastrar os secrets no GitHub Actions (6/11 cadastrados; os 5 restantes dependem de valores definidos em fases futuras)
   - **O quê:** Cadastrar nos secrets do repositório: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `REPLAY_MODE`, `TEST_FAULT_KEY`, `PROMPT_VERSION`, `OCR_MAX_BYTES`, `TEST_ACCOUNT_PASSWORD` (senha das três contas seed) e o token de acesso da Supabase CLI necessário para `supabase db push --project-ref <ref>`.
   - **Como confirmo:** um workflow vazio passa verde no GitHub Actions.
 
-- [ ] `T-009` `supabase init` + `config.toml` configurado — **Critério:** `supabase start` sobe sem erro.
+- [x] `T-009` `supabase init` + `config.toml` configurado — **Critério:** `supabase start` sobe sem erro.
 
-- [ ] `T-010` Criar `docs/bugs_conhecidos.md` vazio, versionado — ativa a política de defeito D16 desde já — **Critério:** arquivo existe e está versionado no repositório.
+- [x] `T-010` Criar `docs/bugs_conhecidos.md` vazio, versionado — ativa a política de defeito D16 desde já — **Critério:** arquivo existe e está versionado no repositório.
 
 ---
 
