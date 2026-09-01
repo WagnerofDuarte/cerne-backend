@@ -30,35 +30,35 @@ Este arquivo transforma os três documentos de planejamento em uma lista de tare
 ## Fase 0 — Fundação
 **Prazo: até 01/09/2026**
 
-- [ ] 🔴 **[MANUAL] `T-001` / `GATE-01`** — Instalar e manter o Docker Desktop rodando
+- [x] 🔴 **[MANUAL] `T-001` / `GATE-01`** — Instalar e manter o Docker Desktop rodando
   - **O quê:** Instalar o Docker Desktop e deixá-lo aberto durante todo o desenvolvimento local.
   - **Por que agora:** é pré-requisito de `supabase start` (stack local) — nada a partir daqui roda sem ele.
   - **Como confirmo:** `docker ps` responde sem erro.
 
-- [ ] 🔴 **[MANUAL] `T-002` / `GATE-02`** — Criar conta Supabase e os três projetos
+- [x] 🔴 **[MANUAL] `T-002` / `GATE-02`** — Criar conta Supabase e os três projetos
   - **O quê:** Criar conta no Supabase (se ainda não existir) e três projetos: `cerne-dev`, `cerne-ciclo-a`, `cerne-ciclo-b`. **Mesma região nos três: `sa-east-1` (São Paulo).** Anotar, de cada um, `project ref`, `anon key`, `service_role key` e a senha do banco.
   - **Por que agora:** `cerne-dev` é o único onde se escreve durante o desenvolvimento; `ciclo-a` e `ciclo-b` só recebem migrações e seed mais adiante (D14 — três ambientes evita contaminação cruzada entre os dois ciclos comparativos).
   - **Como confirmo:** três `project ref` anotados em local seguro (não versionado).
 
-- [ ] 🔴 **[MANUAL] `T-003` / `GATE-03`** — Autenticar a Supabase CLI
+- [x] 🔴 **[MANUAL] `T-003` / `GATE-03`** — Autenticar a Supabase CLI
   - **O quê:** Rodar `supabase login` (abre o navegador, pede credencial pessoal).
   - **Como confirmo:** `supabase projects list` lista os três projetos do `GATE-02`.
 
-- [ ] 🔴 **[MANUAL] `T-004` / `GATE-04`** — Criar chave de API Anthropic + definir teto de gasto
+- [x] 🔴 **[MANUAL] `T-004` / `GATE-04`** — Criar chave de API Anthropic + definir teto de gasto
   - **O quê:** Criar uma chave de API na Anthropic e configurar um teto de gasto mensal (sugestão: US$ 50).
   - **Por que agora:** obrigatório **antes** de qualquer código que chame IA — um laço acidental em endpoint de IA queima crédito em minutos.
   - **Como confirmo:** uma chamada de teste ao Haiku 4.5 responde com sucesso.
 
-- [ ] 🔴 **[MANUAL] `T-005` / `GATE-05`** — Criar conta Voyage AI + habilitar billing + definir teto
+- [x] 🔴 **[MANUAL] `T-005` / `GATE-05`** — Criar conta Voyage AI + habilitar billing + definir teto
   - **O quê:** Criar conta na Voyage AI, gerar chave de API, habilitar billing e definir teto de gasto (sugestão: US$ 20).
   - **Nota:** já verificado em 31/08/2026 que `voyage-4` com `output_dimension: 1024` retorna 1024 floats. Se a chave for recriada, repetir esta verificação antes da `T-030`.
   - **Como confirmo:** chamada de teste retorna vetor de **1024** floats.
 
-- [ ] 🔴 **[MANUAL] `T-006` / `GATE-06`** — Criar repositório GitHub privado
+- [x] 🔴 **[MANUAL] `T-006` / `GATE-06`** — Criar repositório GitHub privado
   - **O quê:** Criar repositório privado no GitHub e conceder acesso ao agente.
   - **Como confirmo:** `git remote -v` aponta para ele.
 
-- [ ] `T-007` Criar a estrutura de diretórios do repositório (`supabase/`, `contracts/`, `tests/`, `fixtures/`, `docs/`, `scripts/`, `.github/workflows/` — ver Seção 2 do plano técnico) — **Critério:** `tree` bate com a especificação.
+- [x] `T-007` Criar a estrutura de diretórios do repositório (`supabase/`, `contracts/`, `tests/`, `fixtures/`, `docs/`, `scripts/`, `.github/workflows/` — ver Seção 2 do plano técnico) — **Critério:** `tree` bate com a especificação.
 
 - [ ] 🔴 **[MANUAL] `T-008` / `GATE-07`** — Cadastrar os secrets no GitHub Actions
   - **O quê:** Cadastrar nos secrets do repositório: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `REPLAY_MODE`, `TEST_FAULT_KEY`, `PROMPT_VERSION`, `OCR_MAX_BYTES`, `TEST_ACCOUNT_PASSWORD` (senha das três contas seed) e o token de acesso da Supabase CLI necessário para `supabase db push --project-ref <ref>`.
