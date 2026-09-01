@@ -2,8 +2,8 @@
 # Nunca versionar — ver GATE-02 no big-plan.md ("anotado em local seguro, não versionado")
 supabase.md
 
-# Chaves de API de IA (Anthropic, Voyage) — GATE-04 e GATE-05
-ia-keys.md
+# Chaves de API de IA (Anthropic, Voyage) + token de acesso Supabase — GATE-04, GATE-05, GATE-07
+keys.md
 
 # Variáveis de ambiente / segredos locais
 .env
