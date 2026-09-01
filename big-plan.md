@@ -68,6 +68,26 @@ Este arquivo transforma os três documentos de planejamento em uma lista de tare
 
 - [x] `T-010` Criar `docs/bugs_conhecidos.md` vazio, versionado — ativa a política de defeito D16 desde já — **Critério:** arquivo existe e está versionado no repositório.
 
+### Encerramento da Fase 0 — notas para quem retomar (concluída 01/09/2026, no prazo, 10/10 itens)
+
+Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fase 0 foi executada.
+
+**Credenciais e contas:**
+- Credenciais reais ficam em `keys.md` (Anthropic, Voyage, token de acesso da Supabase CLI) e `supabase.md` (project ref/anon key/service_role key/senha do banco dos 3 projetos) — ambos na raiz do repo, ambos no `.gitignore`, nunca versionados. Se algum desses arquivos for renomeado, atualizar o `.gitignore` junto (já aconteceu uma vez: `ia-keys.md` → `keys.md` ficou destravado até ser notado e corrigido).
+- A senha do banco é **igual nos 3 ambientes** (`dev`/`ciclo-a`/`ciclo-b`) — decisão intencional do Wagner, aceitando o risco de comprometimento simultâneo caso vaze.
+- Voyage AI **não tem** recurso nativo de teto de gasto (é um pedido de feature em aberto na Voyage) — mitigado com saldo prepago e auto-recharge desligado. Anthropic tem teto nativo configurado em US$20 (menor que a sugestão original de US$50 do plano, por escolha do Wagner).
+- 6 dos 11 secrets do GitHub Actions já cadastrados (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` do ambiente `dev`, `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `SUPABASE_ACCESS_TOKEN`). Faltam `REPLAY_MODE`, `TEST_FAULT_KEY`, `PROMPT_VERSION`, `OCR_MAX_BYTES`, `TEST_ACCOUNT_PASSWORD` — só ganham valor quando o código/seed da Fase 1+ definir o que são.
+
+**Ambiente técnico:**
+- O stack Supabase local já foi iniciado (`supabase start`) nesta sessão. Numa sessão nova, confirmar antes de tudo que o Docker Desktop está aberto (`docker ps`) e subir o stack de novo se necessário (`supabase status` / `supabase start`).
+- `supabase/config.toml` foi ajustado manualmente em 2 pontos que fogem do padrão gerado pelo `supabase init` — não sobrescrever sem querer: `auto_expose_new_tables = false` (alinhado à D2, nenhuma tabela exposta por padrão) e `db.seed.sql_paths = ["./seed/seed.sql"]` (o padrão do CLI é `supabase/seed.sql`; a estrutura deste projeto usa `supabase/seed/seed.sql`).
+- `gh` CLI autenticado localmente; repositório GitHub confirmado como privado (checagem via API pública sem login retornou 404, como esperado).
+- Neste ambiente local específico, comandos como `docker` e `supabase` só aparecem no `PATH` de um shell de login (`zsh -lc "..."`) — se um comando disser "command not found" para uma ferramenta que sabidamente está instalada, tentar de novo com `zsh -lc`.
+
+**Sobre o Wagner (perfil de quem vai ler as respostas):** não é desenvolvedor backend — explicar conceitos técnicos (RLS, migração, embedding, etc.) com analogias simples antes/junto da justificativa de qualquer decisão, sem assumir jargão prévio.
+
+**Gates manuais (🔴 [MANUAL]) — lembrete de processo:** ao chegar num item assim marcado, parar, explicar o que fazer e por quê, esperar confirmação explícita do Wagner, e só então verificar — não pular esse ritual mesmo quando parecer óbvio.
+
 ---
 
 ## Fase 1 — Banco e Segurança
