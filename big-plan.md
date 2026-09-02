@@ -150,6 +150,12 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
   Senha única via `TEST_ACCOUNT_PASSWORD`. Embeddings da conta A são gerados de verdade via Voyage na primeira execução e reaproveitados depois. — **Critério:** `supabase db reset` carrega 34+1+0 entradas.
 
+  **Status em 02/09/2026:** código escrito (`supabase/seed/seed.sql`, `supabase/seed/ancora.md`) e validado por dry-run funcional neste sandbox (Postgres 16 nativo + as 9 migrações + mocks de `auth.users`/`auth.uid`/roles, mesmo esquema do dry-run de `T-011`–`T-019`): 34+1+0 entradas, 10 dias distintos na conta A, fontes 14/8/6/6, `chat_sessions.user_message_count` = 4/3/3 (trigger correto), 4 tags, 13 `entry_tags`, zero linha com `source`/`chat_message_id` incoerente, senha bate via `crypt()`, RLS isola cada conta corretamente, e reexecutar o `seed.sql` não duplica nada (idempotência confirmada). **Ainda não roda de verdade no Supabase CLI** — mesmo bloqueio de rede da nota de ambiente, dentro de `T-019v`.
+
+  Duas lacunas que os documentos-fonte não resolviam, preenchidas de forma pragmática (revisar se achar errado):
+  - **Senha:** `seed.sql` é SQL puro, sem acesso a variável de ambiente do shell — fixei o literal `Cerne-Teste-2026!` dentro do seed (hash via `crypt()`). `TEST_ACCOUNT_PASSWORD` precisa ser configurado com esse valor exato. Detalhado em `supabase/seed/ancora.md`.
+  - **Embeddings reais da conta A:** SQL puro não faz chamada HTTP. `seed.sql` grava as 34 entradas da conta A com `embedding_status='pending'` (exceto a que fica propositalmente `'failed'`); um script novo, `scripts/backfill-seed-embeddings.ts` (Deno), precisa ser rodado **uma vez** depois de `supabase db reset` — chama a Voyage de verdade e preenche os embeddings. É idempotente (só toca `pending`). **Ação pendente do Wagner:** depois de rodar `supabase db reset` localmente, rodar `deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts` com `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `VOYAGE_API_KEY` no ambiente — sem isso a prova do RF06 (`T-024`) não tem embedding pra buscar.
+
 - [ ] `T-023` Suíte pgTAP completa (ver Fase 1 de testes, abaixo) — **Critério:** `supabase test db` 100% verde.
 
 - [ ] `T-024` **Prova do RF06** — busca por `ansiedade` (ou `cansaço`/`gratidão`) no seed encontra o par plantado correspondente. ⚠️ **Se falhar nos três pares, parar e reportar** — é condição de viabilidade do RF06, não um detalhe.
