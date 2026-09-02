@@ -121,10 +121,11 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
   - **Por que agora:** é a única forma de comprovar por comando os critérios de `T-011`–`T-019` enquanto este ambiente remoto não pode baixar as imagens Docker do Supabase.
   - **Como confirmo:** você reporta o resultado de `supabase db reset` (saída limpa ou erro) e das duas verificações pontuais acima. Com a confirmação, marco `T-011`–`T-019` como `[x]`.
 
-- [ ] 🔴 **[MANUAL] `T-020` / `GATE-08`** — Fornecer as fixtures de mídia
+- [x] 🔴 **[MANUAL] `T-020` / `GATE-08`** — Fornecer as fixtures de mídia (concluída 02/09/2026)
   - **O quê:** Fornecer três arquivos em `fixtures/media/`: `audio_fixture_01.wav` (42s, fala em português, com transcrição conhecida documentada em `fixtures/transcricoes.md`), `ocr_fixture_01.png` (foto de caderno manuscrito, texto legível), `ocr_fixture_ilegivel.png` (imagem sem texto reconhecível).
   - **Por que agora:** esses arquivos ficam **imutáveis** a partir da `T-060` — regenerar qualquer um depois invalida o cache de replay inteiro.
-  - **Como confirmo:** os três arquivos existem em `fixtures/media/`.
+  - **Como confirmo:** os três arquivos existem em `fixtures/media/`. ✅ Confirmado — `audio_fixture_01.wav` (50,4s, PCM 16-bit estéreo 48kHz, fala em português), `ocr_fixture_01.png` (caderno manuscrito, texto legível), `ocr_fixture_ilegivel.png` (página em branco, sem texto).
+  - **Divergências encontradas ao verificar (não bloqueiam o GATE, mas ficam registradas):** (1) o áudio tem 50,4s, não os 42s descritos no plano — só importa se algum script/roteiro futuro comparar a duração exata; (2) o arquivo de transcrição foi versionado como `fixtures/trancricoes.md` (sem o "s" de "trans"), não `fixtures/transcricoes.md` como os documentos-fonte nomeiam — os dois nomes vão coexistir como divergência até o Wagner confirmar se renomeia.
 
 - [ ] 🔴 **[MANUAL] `T-021` / `GATE-09`** — Aprovar textos literais e pares semânticos
   - **O quê:** Aprovar os sete textos literais do roteiro e os três pares semânticos do RF06, definidos **antes** de qualquer teste (para não escolher o resultado a posteriori):
