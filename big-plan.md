@@ -93,6 +93,8 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 ## Fase 1 — Banco e Segurança
 **Prazo: 02/09 a 05/09/2026**
 
+**Nota de ambiente (02/09/2026):** o sandbox remoto onde o agente roda esta fase bloqueia, por política de rede, o download das imagens Docker do Supabase (`production.cloudfront.docker.com` responde 403 — negação de política, confirmado no proxy do ambiente). Isso significa que o agente **não consegue rodar `supabase start` / `db reset` / `test db` neste ambiente** para comprovar os critérios de conclusão por comando. Acordo com o Wagner: o agente escreve todo o código desta fase (migrações, seed, testes pgTAP) normalmente, na ordem do checklist, mas a *execução* dos comandos de verificação fica para o Wagner rodar na máquina local (onde o Docker Desktop do `GATE-01` já funciona). Por isso os itens `T-011`–`T-019` ficam com o código pronto mas **sem marcar `[x]`** até o Wagner confirmar o resultado local — ver `T-019v` abaixo.
+
 **Ordem de migração resolvida** (o plano técnico §5 deixa uma nota de reordenação em aberto — "criar `chat_sessions`/`chat_messages` antes de `entries`, pois `entries.chat_message_id` referencia `chat_messages`"; esta é a ordem de dependência válida a seguir em `T-011`–`T-018`, numeração exata dos arquivos a decidir na implementação):
 `0001 extensions` → `0002 profiles` (+ trigger `on_auth_user_created`) → `0003 chat_sessions + chat_messages` (+ triggers) → `0004 entries` (+ índices + trigger `bump_server_revision`) → `0005 tags + entry_tags` → `0006 insights` → `0007 export_jobs` → `0008 schema experiment` (`ai_replay_cache`, `fault_injection_log`) → `0009 políticas RLS` (todas as tabelas com dono).
 
@@ -113,6 +115,11 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 - [ ] `T-018` Schema `experiment` (fora do alcance de RLS de usuário) com `ai_replay_cache` e `fault_injection_log` — **Critério:** papel `authenticated` não tem acesso ao schema.
 
 - [ ] `T-019` Políticas de RLS em **todas** as tabelas com dono: `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` + uma política por operação (`auth.uid() = user_id`) + `REVOKE ALL ... FROM anon` — **Critério:** `supabase test db` verde.
+
+- [ ] 🔴 **[MANUAL] `T-019v`** — Validar localmente os critérios de conclusão de `T-011`–`T-019` (item fora do backlog original — registrado por causa do bloqueio de rede descrito na "Nota de ambiente" acima)
+  - **O quê:** Na sua máquina local (Docker Desktop já rodando, `GATE-01`), `git pull origin fase1`, depois `supabase db reset` e conferir que sobe sem erro; `\d entries` para confirmar o índice único parcial de idempotência (`entries_chat_message_uniq`); tentar inserir duas linhas em `insights` com o mesmo `(session_id, trigger_type, trigger_key)` e confirmar que a segunda é recusada pelo banco; cadastrar um usuário de teste e confirmar que aparece uma linha em `profiles` com o mesmo `id`.
+  - **Por que agora:** é a única forma de comprovar por comando os critérios de `T-011`–`T-019` enquanto este ambiente remoto não pode baixar as imagens Docker do Supabase.
+  - **Como confirmo:** você reporta o resultado de `supabase db reset` (saída limpa ou erro) e das duas verificações pontuais acima. Com a confirmação, marco `T-011`–`T-019` como `[x]`.
 
 - [ ] 🔴 **[MANUAL] `T-020` / `GATE-08`** — Fornecer as fixtures de mídia
   - **O quê:** Fornecer três arquivos em `fixtures/media/`: `audio_fixture_01.wav` (42s, fala em português, com transcrição conhecida documentada em `fixtures/transcricoes.md`), `ocr_fixture_01.png` (foto de caderno manuscrito, texto legível), `ocr_fixture_ilegivel.png` (imagem sem texto reconhecível).
