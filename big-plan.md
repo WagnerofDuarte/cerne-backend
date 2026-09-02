@@ -127,7 +127,7 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
   - **Como confirmo:** os três arquivos existem em `fixtures/media/`. ✅ Confirmado — `audio_fixture_01.wav` (50,4s, PCM 16-bit estéreo 48kHz, fala em português), `ocr_fixture_01.png` (caderno manuscrito, texto legível), `ocr_fixture_ilegivel.png` (página em branco, sem texto).
   - **Divergências encontradas ao verificar (não bloqueiam o GATE, mas ficam registradas):** (1) o áudio tem 50,4s, não os 42s descritos no plano — só importa se algum script/roteiro futuro comparar a duração exata; (2) o arquivo de transcrição foi versionado como `fixtures/trancricoes.md` (sem o "s" de "trans"), não `fixtures/transcricoes.md` como os documentos-fonte nomeiam — os dois nomes vão coexistir como divergência até o Wagner confirmar se renomeia.
 
-- [ ] 🔴 **[MANUAL] `T-021` / `GATE-09`** — Aprovar textos literais e pares semânticos
+- [ ] 🔴 **[MANUAL] `T-021` / `GATE-09`** — Aprovar textos literais e pares semânticos (**parcial** — pares semânticos aprovados 02/09/2026; textos do roteiro pendentes, ver nota)
   - **O quê:** Aprovar os sete textos literais do roteiro e os três pares semânticos do RF06, definidos **antes** de qualquer teste (para não escolher o resultado a posteriori):
 
     | Par | Termo buscado | Entrada plantada (não contém o termo) |
@@ -138,6 +138,7 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
     Regra de aceite: **pelo menos um dos três** precisa passar para o critério do RF06 ser satisfeito.
   - **Como confirmo:** `fixtures/textos.json` e `fixtures/pares_semanticos.md` existem e estão aprovados.
+  - **Status em 02/09/2026:** ✅ os 3 textos dos pares semânticos foram propostos pelo agente e **aprovados pelo Wagner**, gravados em `fixtures/pares_semanticos.md` — suficiente para desbloquear `T-022` e `T-024`. ⏳ Os **sete textos literais do roteiro** ficam pendentes: dependem de `docs/roteiro_de_validacao.md`, que não existe no repositório e por sua vez depende de dois documentos-fonte também ausentes (`Cerne_-_prototipo_final.html` e `Requisitos_e_Fluxo_de_Telas_TCC.md` — ver "Itens em aberto"). O Wagner pediu para retomar isso mais perto da Fase 6 (`T-060`, previsto 21–22/09) — lembrete agendado pelo agente. `fixtures/textos.json` só será criado quando o roteiro existir.
 
 - [ ] `T-022` `supabase/seed/seed.sql` idempotente, com âncora de data fixa (`ANCORA = 2026-09-23T09:41:00Z`, documentada em `supabase/seed/ancora.md`, datas do seed sempre relativas a ela) e as três contas:
 
