@@ -116,7 +116,7 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
 - [ ] `T-019` Políticas de RLS em **todas** as tabelas com dono: `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` + uma política por operação (`auth.uid() = user_id`) + `REVOKE ALL ... FROM anon` — **Critério:** `supabase test db` verde.
 
-- [ ] 🔴 **[MANUAL] `T-019v`** — Validar localmente os critérios de conclusão de `T-011`–`T-022` (item fora do backlog original — registrado por causa do bloqueio de rede descrito na "Nota de ambiente" acima)
+- [ ] 🔴 **[MANUAL] `T-019v`** — Validar localmente os critérios de conclusão de `T-011`–`T-024` (item fora do backlog original — registrado por causa do bloqueio de rede descrito na "Nota de ambiente" acima)
   - **O quê**, na sua máquina local (Docker Desktop já rodando, `GATE-01`):
     1. `git pull origin fase1`
     2. `supabase db reset` — conferir que sobe **sem erro** (isso já aplica as 9 migrações **e** carrega o seed com as 3 contas)
@@ -124,9 +124,11 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
     4. Tentar inserir duas linhas em `insights` com o mesmo `(session_id, trigger_type, trigger_key)` e confirmar que a segunda é recusada pelo banco
     5. Cadastrar um usuário de teste (fora das 3 contas do seed) e confirmar que aparece uma linha em `profiles` com o mesmo `id`
     6. Conferir a contagem do seed: `select count(*) from entries where user_id = 'a0000000-0000-0000-0000-000000000001'` deve dar **34**; trocando o `user_id` pelo de `cenario-uma@cerne.test`/`cenario-vazio@cerne.test`, **1** e **0**
-    7. **Rodar o backfill de embeddings** (só depois do `db reset` acima): `deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts`, com `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `VOYAGE_API_KEY` no ambiente — sem isso a conta A fica com 33 entradas em `embedding_status='pending'` para sempre, e a prova do RF06 (`T-024`, mais adiante) não tem embedding pra buscar
-  - **Por que agora:** é a única forma de comprovar por comando os critérios de `T-011`–`T-022` enquanto este ambiente remoto não pode baixar as imagens Docker do Supabase. O passo 7 é o único que não é só "confirmar o já escrito" — é uma ação que só pode acontecer na sua máquina (chama a Voyage de verdade).
-  - **Como confirmo:** você reporta o resultado de `supabase db reset`, das verificações pontuais (3–6) e da saída do script de backfill (quantos embeddings gravados, quantas falhas). Com a confirmação, marco `T-011`–`T-022` como `[x]`.
+    7. **Rodar o backfill de embeddings** (só depois do `db reset` acima): `deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts`, com `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `VOYAGE_API_KEY` no ambiente — sem isso a conta A fica com 33 entradas em `embedding_status='pending'` para sempre, e a prova do RF06 (`T-024`) não tem embedding pra buscar
+    8. `supabase test db` — conferir **100% verde** (a suíte já roda 71/71 num Postgres nativo equivalente neste sandbox, mas o real é o Supabase CLI)
+    9. **Rodar a prova do RF06** (só depois do passo 7): `deno run --allow-net --allow-env scripts/prove-rf06.ts`, com `VOYAGE_API_KEY` — reporta se pelo menos 1 dos 3 pares encontrou a entrada plantada no top-5
+  - **Por que agora:** é a única forma de comprovar por comando os critérios de `T-011`–`T-024` enquanto este ambiente remoto não pode baixar as imagens Docker do Supabase. Os passos 7 e 9 são os únicos que não são só "confirmar o já escrito" — são ações que só podem acontecer na sua máquina (chamam a Voyage de verdade).
+  - **Como confirmo:** você reporta o resultado de `supabase db reset`, das verificações pontuais (3–6), de `supabase test db` (passo 8), e das saídas dos dois scripts (7 e 9). Com a confirmação, marco `T-011`–`T-024` como `[x]`.
 
 - [x] 🔴 **[MANUAL] `T-020` / `GATE-08`** — Fornecer as fixtures de mídia (concluída 02/09/2026)
   - **O quê:** Fornecer três arquivos em `fixtures/media/`: `audio_fixture_01.wav` (42s, fala em português, com transcrição conhecida documentada em `fixtures/transcricoes.md`), `ocr_fixture_01.png` (foto de caderno manuscrito, texto legível), `ocr_fixture_ilegivel.png` (imagem sem texto reconhecível).
@@ -165,7 +167,13 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
 - [ ] `T-023` Suíte pgTAP completa (ver Fase 1 de testes, abaixo) — **Critério:** `supabase test db` 100% verde.
 
+  **Status em 03/09/2026:** 12 arquivos escritos em `supabase/tests/` (os 8 `rls_*.sql` de cada tabela com dono, `rls_experiment.sql`, `constraints.sql`, `cascade_delete.sql`, `triggers.sql`) — isolamento positivo/negativo, escrita cruzada bloqueada, RLS forçada, `anon` sem leitura, trava do schema `experiment`, os 4 constraints de `T-014`/`T-016`/`T-013`, cascata de delete nas 8 tabelas, e os dois triggers (`server_revision`, `user_message_count`). **Validado com `pg_prove` de verdade** neste sandbox (não é só dry-run de sintaxe): rebuild completo do zero (migrações + seed) e depois a suíte — **71/71 testes verdes, 12/12 arquivos**. Ainda falta confirmar com o `supabase test db` real (mesmo bloqueio de rede) — ver `T-019v`.
+
+  Detalhe técnico que vale registrar: os testes de RLS trocam de papel (`SET ROLE authenticated`/`anon`) para simular cada usuário, mas o pgTAP (`ok`/`is`/`throws_ok`) fica inacessível depois da troca (falta `GRANT` nos objetos internos dele para esses papéis) — cada teste captura o resultado antes de voltar (`RESET ROLE`) usando `set_config`/`GET DIAGNOSTICS`, e só then chama a asserção do pgTAP. Também: o `throws_ok` de 3 argumentos (`sql, code, description`) **não** funciona como parece — o meio vira "mensagem esperada", não "código". O jeito certo é a forma de 4 argumentos com o código como inteiro: `throws_ok(sql, 23505, null, description)`.
+
 - [ ] `T-024` **Prova do RF06** — busca por `ansiedade` (ou `cansaço`/`gratidão`) no seed encontra o par plantado correspondente. ⚠️ **Se falhar nos três pares, parar e reportar** — é condição de viabilidade do RF06, não um detalhe.
+
+  **Status em 03/09/2026:** `scripts/prove-rf06.ts` (Deno) escrito — conecta direto no Postgres local (o endpoint `GET /entries/search` só existe na `T-040`, Fase 3), gera o embedding de consulta dos 3 termos via Voyage (`input_type='query'`) e faz varredura exata por distância de cosseno (`<=>` do pgvector, sem índice aproximado) contra as entradas `ready` da conta A, checando se a entrada plantada aparece no top-5. **Não pode ser executado nem por mim nem confirmado ainda** — depende dos embeddings reais da conta A (`T-022`, backfill) e chama a Voyage de verdade, então é ação da sua máquina local. **Ação pendente do Wagner:** depois do backfill de `T-022`, rodar `deno run --allow-net --allow-env scripts/prove-rf06.ts` com `VOYAGE_API_KEY` (e `SUPABASE_DB_URL` se a porta do Postgres local não for a `54322` padrão).
 
 ---
 
