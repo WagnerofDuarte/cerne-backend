@@ -169,11 +169,53 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
   **Status em 03/09/2026:** 12 arquivos escritos em `supabase/tests/` (os 8 `rls_*.sql` de cada tabela com dono, `rls_experiment.sql`, `constraints.sql`, `cascade_delete.sql`, `triggers.sql`) — isolamento positivo/negativo, escrita cruzada bloqueada, RLS forçada, `anon` sem leitura, trava do schema `experiment`, os 4 constraints de `T-014`/`T-016`/`T-013`, cascata de delete nas 8 tabelas, e os dois triggers (`server_revision`, `user_message_count`). **Validado com `pg_prove` de verdade** neste sandbox (não é só dry-run de sintaxe): rebuild completo do zero (migrações + seed) e depois a suíte — **71/71 testes verdes, 12/12 arquivos**. Ainda falta confirmar com o `supabase test db` real (mesmo bloqueio de rede) — ver `T-019v`.
 
-  Detalhe técnico que vale registrar: os testes de RLS trocam de papel (`SET ROLE authenticated`/`anon`) para simular cada usuário, mas o pgTAP (`ok`/`is`/`throws_ok`) fica inacessível depois da troca (falta `GRANT` nos objetos internos dele para esses papéis) — cada teste captura o resultado antes de voltar (`RESET ROLE`) usando `set_config`/`GET DIAGNOSTICS`, e só then chama a asserção do pgTAP. Também: o `throws_ok` de 3 argumentos (`sql, code, description`) **não** funciona como parece — o meio vira "mensagem esperada", não "código". O jeito certo é a forma de 4 argumentos com o código como inteiro: `throws_ok(sql, 23505, null, description)`.
+  Detalhe técnico que vale registrar: os testes de RLS trocam de papel (`SET ROLE authenticated`/`anon`) para simular cada usuário, mas o pgTAP (`ok`/`is`/`throws_ok`) fica inacessível depois da troca (falta `GRANT` nos objetos internos dele para esses papéis) — cada teste captura o resultado antes de voltar (`RESET ROLE`) usando `set_config`/`GET DIAGNOSTICS`, e só então chama a asserção do pgTAP. Também: o `throws_ok` de 3 argumentos (`sql, code, description`) **não** funciona como parece — o meio vira "mensagem esperada", não "código". O jeito certo é a forma de 4 argumentos com o código como inteiro: `throws_ok(sql, 23505, null, description)`.
 
 - [ ] `T-024` **Prova do RF06** — busca por `ansiedade` (ou `cansaço`/`gratidão`) no seed encontra o par plantado correspondente. ⚠️ **Se falhar nos três pares, parar e reportar** — é condição de viabilidade do RF06, não um detalhe.
 
   **Status em 03/09/2026:** `scripts/prove-rf06.ts` (Deno) escrito — conecta direto no Postgres local (o endpoint `GET /entries/search` só existe na `T-040`, Fase 3), gera o embedding de consulta dos 3 termos via Voyage (`input_type='query'`) e faz varredura exata por distância de cosseno (`<=>` do pgvector, sem índice aproximado) contra as entradas `ready` da conta A, checando se a entrada plantada aparece no top-5. **Não pode ser executado nem por mim nem confirmado ainda** — depende dos embeddings reais da conta A (`T-022`, backfill) e chama a Voyage de verdade, então é ação da sua máquina local. **Ação pendente do Wagner:** depois do backfill de `T-022`, rodar `deno run --allow-net --allow-env scripts/prove-rf06.ts` com `VOYAGE_API_KEY` (e `SUPABASE_DB_URL` se a porta do Postgres local não for a `54322` padrão).
+
+### Encerramento da Fase 1 — notas para quem retomar (código completo em 03/09/2026, dentro do prazo — 05/09 — mas **ainda não confirmada**: 0/10 itens marcados `[x]`, todos pendentes da validação local do Wagner)
+
+Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fase 1 foi executada.
+
+**Por que nada está marcado `[x]` apesar do código estar pronto:** todo este trabalho foi feito num sandbox remoto (não a máquina local onde a Fase 0 rodou) cuja política de rede bloqueia o download das imagens Docker do Supabase (`production.cloudfront.docker.com` responde 403). Não dá para rodar `supabase start`/`db reset`/`test db` de verdade aqui — só o Wagner consegue, na máquina local onde o `GATE-01` já funciona. Ver "Nota de ambiente" no início desta fase.
+
+**O que já está pronto, commitado e pushed no branch `fase1`** (`T-011`–`T-024`, código completo):
+- 9 migrações (`supabase/migrations/0001`–`0009`): schema inteiro, RLS em todas as 8 tabelas com dono, schema `experiment` trancado
+- `supabase/seed/seed.sql` + `ancora.md`: as 3 contas (34/1/0 entradas), idempotente
+- `scripts/backfill-seed-embeddings.ts`: gera os embeddings reais da conta A via Voyage (SQL puro não faz chamada HTTP)
+- `scripts/prove-rf06.ts`: a prova da busca semântica (SQL puro não tem endpoint de busca ainda — isso é da Fase 3)
+- 12 arquivos pgTAP em `supabase/tests/` (71 testes)
+- `fixtures/media/` (os 3 arquivos), `fixtures/pares_semanticos.md` (aprovado pelo Wagner)
+
+**Como foi validado sem o Supabase CLI:** instalei Postgres 16 nativo + pgvector + pgtap neste sandbox (via `apt`, fora do Supabase) e simulei o schema `auth` do GoTrue à mão, só o suficiente para rodar as migrações, o seed e a suíte pgTAP de ponta a ponta várias vezes, inclusive num rebuild completo do zero. **71/71 testes pgTAP verdes, seed com contagens exatas, idempotência confirmada.** Isso dá confiança de que o SQL está correto, mas **não é o Supabase CLI real** — coisas específicas da implementação do GoTrue (o jeito que semeei `auth.users`/`auth.identities` à mão) nunca foram testadas contra o ambiente de verdade.
+
+**O que falta fazer da sua parte (`T-019v`, tudo em uma tacada só) — na ordem:**
+1. `git pull origin fase1`
+2. `supabase db reset` — sobe sem erro?
+3. `\d entries` — confirma o índice `entries_chat_message_uniq`?
+4. Insert duplicado em `insights` (mesmo `session_id`+`trigger_type`+`trigger_key`) é recusado?
+5. Cadastro de um usuário novo (fora do seed) cria linha em `profiles`?
+6. Contagens do seed batem: conta A = 34, `cenario-uma` = 1, `cenario-vazio` = 0?
+7. **`deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts`** (com `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `VOYAGE_API_KEY`) — grava os embeddings reais da conta A
+8. `supabase test db` — 100% verde?
+9. **`deno run --allow-net --allow-env scripts/prove-rf06.ts`** (com `VOYAGE_API_KEY`) — pelo menos 1 dos 3 pares semânticos encontra a entrada plantada?
+
+Me reporte o resultado desses 9 passos (especialmente qualquer erro) e eu marco `T-011`–`T-024` como `[x]`.
+
+**Se algo der errado no passo 2 (login/cadastro das 3 contas):** o primeiro lugar a olhar é o jeito que semeei `auth.users`/`auth.identities` — usei o padrão comum da comunidade Supabase (insert direto, senha via `crypt()`/`gen_salt()` do pgcrypto, uma linha em `auth.identities` com provider `email`), mas nunca testei contra o GoTrue real rodando de verdade.
+
+**Itens em aberto que atravessam a Fase 1, ainda sem solução:**
+- **`docs/roteiro_de_validacao.md`** (os 7 textos literais do roteiro, parte do `GATE-09`) continua pendente — depende de dois documentos-fonte ausentes do repositório. Combinamos de retomar perto da Fase 6; lembrete agendado para 18/09.
+- **`fixtures/trancricoes.md`** foi versionado com esse nome (sem o "s" de "trans") em vez de `fixtures/transcricoes.md`, como os documentos-fonte chamam. Ainda não decidido se renomeia.
+- **Duração real do áudio fixture:** 50,4s, não os 42s descritos no plano técnico. Só importa se algum script futuro comparar o valor exato.
+
+**Duas lacunas de arquitetura que os documentos-fonte não resolviam, preenchidas por mim e documentadas em `supabase/seed/ancora.md`** (revisar se parecer errado): a senha das 3 contas é um literal fixo dentro do `seed.sql` (`Cerne-Teste-2026!`, já que SQL puro não lê variável de ambiente — `TEST_ACCOUNT_PASSWORD` precisa bater com esse valor), e os embeddings reais da conta A vêm de um script complementar em vez do próprio seed (SQL puro não chama HTTP).
+
+**Sobre o Wagner (perfil de quem vai ler as respostas):** não é desenvolvedor backend — mesma orientação da Fase 0, explicar conceitos técnicos com analogias simples antes/junto da justificativa de qualquer decisão.
+
+**Gates manuais (🔴 [MANUAL]) — lembrete de processo:** ao chegar num item assim marcado, parar, explicar o que fazer e por quê, esperar confirmação explícita do Wagner, e só então verificar.
 
 ---
 
