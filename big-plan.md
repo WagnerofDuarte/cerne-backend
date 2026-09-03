@@ -116,10 +116,17 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
 - [ ] `T-019` Políticas de RLS em **todas** as tabelas com dono: `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` + uma política por operação (`auth.uid() = user_id`) + `REVOKE ALL ... FROM anon` — **Critério:** `supabase test db` verde.
 
-- [ ] 🔴 **[MANUAL] `T-019v`** — Validar localmente os critérios de conclusão de `T-011`–`T-019` (item fora do backlog original — registrado por causa do bloqueio de rede descrito na "Nota de ambiente" acima)
-  - **O quê:** Na sua máquina local (Docker Desktop já rodando, `GATE-01`), `git pull origin fase1`, depois `supabase db reset` e conferir que sobe sem erro; `\d entries` para confirmar o índice único parcial de idempotência (`entries_chat_message_uniq`); tentar inserir duas linhas em `insights` com o mesmo `(session_id, trigger_type, trigger_key)` e confirmar que a segunda é recusada pelo banco; cadastrar um usuário de teste e confirmar que aparece uma linha em `profiles` com o mesmo `id`.
-  - **Por que agora:** é a única forma de comprovar por comando os critérios de `T-011`–`T-019` enquanto este ambiente remoto não pode baixar as imagens Docker do Supabase.
-  - **Como confirmo:** você reporta o resultado de `supabase db reset` (saída limpa ou erro) e das duas verificações pontuais acima. Com a confirmação, marco `T-011`–`T-019` como `[x]`.
+- [ ] 🔴 **[MANUAL] `T-019v`** — Validar localmente os critérios de conclusão de `T-011`–`T-022` (item fora do backlog original — registrado por causa do bloqueio de rede descrito na "Nota de ambiente" acima)
+  - **O quê**, na sua máquina local (Docker Desktop já rodando, `GATE-01`):
+    1. `git pull origin fase1`
+    2. `supabase db reset` — conferir que sobe **sem erro** (isso já aplica as 9 migrações **e** carrega o seed com as 3 contas)
+    3. `\d entries` — confirmar o índice único parcial de idempotência (`entries_chat_message_uniq`)
+    4. Tentar inserir duas linhas em `insights` com o mesmo `(session_id, trigger_type, trigger_key)` e confirmar que a segunda é recusada pelo banco
+    5. Cadastrar um usuário de teste (fora das 3 contas do seed) e confirmar que aparece uma linha em `profiles` com o mesmo `id`
+    6. Conferir a contagem do seed: `select count(*) from entries where user_id = 'a0000000-0000-0000-0000-000000000001'` deve dar **34**; trocando o `user_id` pelo de `cenario-uma@cerne.test`/`cenario-vazio@cerne.test`, **1** e **0**
+    7. **Rodar o backfill de embeddings** (só depois do `db reset` acima): `deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts`, com `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `VOYAGE_API_KEY` no ambiente — sem isso a conta A fica com 33 entradas em `embedding_status='pending'` para sempre, e a prova do RF06 (`T-024`, mais adiante) não tem embedding pra buscar
+  - **Por que agora:** é a única forma de comprovar por comando os critérios de `T-011`–`T-022` enquanto este ambiente remoto não pode baixar as imagens Docker do Supabase. O passo 7 é o único que não é só "confirmar o já escrito" — é uma ação que só pode acontecer na sua máquina (chama a Voyage de verdade).
+  - **Como confirmo:** você reporta o resultado de `supabase db reset`, das verificações pontuais (3–6) e da saída do script de backfill (quantos embeddings gravados, quantas falhas). Com a confirmação, marco `T-011`–`T-022` como `[x]`.
 
 - [x] 🔴 **[MANUAL] `T-020` / `GATE-08`** — Fornecer as fixtures de mídia (concluída 02/09/2026)
   - **O quê:** Fornecer três arquivos em `fixtures/media/`: `audio_fixture_01.wav` (42s, fala em português, com transcrição conhecida documentada em `fixtures/transcricoes.md`), `ocr_fixture_01.png` (foto de caderno manuscrito, texto legível), `ocr_fixture_ilegivel.png` (imagem sem texto reconhecível).
