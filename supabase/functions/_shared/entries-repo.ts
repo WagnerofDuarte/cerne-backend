@@ -156,6 +156,65 @@ export async function markEmbeddingReady(
   return shapeEntryForApi(data as EntryRowWithEmbeddedTags);
 }
 
+// --- GET /entries (T-038) --------------------------------------------------
+
+export interface EntriesCursor {
+  readonly occurredAt: string;
+  readonly id: string;
+}
+
+export interface ListEntriesArgs {
+  readonly userId: string;
+  /** Busca `limit + 1` de propósito (ver `listEntries`) — este é o limite pedido pelo cliente, já sem o "+1". */
+  readonly limit: number;
+  readonly cursor: EntriesCursor | null;
+  readonly source?: "manual" | "audio" | "photo" | "chat";
+  readonly dateFrom?: string;
+  readonly dateTo?: string;
+}
+
+export interface ListEntriesResult {
+  /** Até `limit + 1` linhas — o chamador (handler) decide o corte e o `nextCursor` a partir do tamanho. */
+  readonly rows: ReadonlyArray<Record<string, unknown>>;
+  /** Total de linhas que batem com os filtros (sem paginação) — Seção 8.2: `meta.total`. */
+  readonly total: number;
+}
+
+/**
+ * Paginação por keyset (não por OFFSET — Seção 3.5, determinismo): a
+ * ordenação é sempre `occurred_at DESC, id ASC` (Seção 8.2), então "depois
+ * do cursor" significa `occurred_at < cursor.occurredAt` OU (empate exato
+ * de `occurred_at` E `id > cursor.id`) — a mesma combinação que o
+ * `ORDER BY` usa para desempate. Busca `limit + 1` de propósito: se vier a
+ * mais, há próxima página (o handler decide `nextCursor` a partir disso,
+ * sem uma 2ª consulta).
+ */
+export async function listEntries(db: DbClient, args: ListEntriesArgs): Promise<ListEntriesResult> {
+  let query = db
+    .from("entries")
+    .select(ENTRY_SELECT_WITH_TAGS, { count: "exact" })
+    .eq("user_id", args.userId);
+
+  if (args.source) query = query.eq("source", args.source);
+  if (args.dateFrom) query = query.gte("occurred_at", args.dateFrom);
+  if (args.dateTo) query = query.lte("occurred_at", args.dateTo);
+  if (args.cursor) {
+    // Nem `occurred_at` (ISO 8601) nem `id` (uuid) podem conter `,`/`(`/`)`
+    // — seguro para interpolar direto na sintaxe de filtro do PostgREST.
+    const { occurredAt, id } = args.cursor;
+    query = query.or(`occurred_at.lt.${occurredAt},and(occurred_at.eq.${occurredAt},id.gt.${id})`);
+  }
+
+  const { data, error, count } = await query
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: true })
+    .limit(args.limit + 1);
+
+  if (error) throw error;
+  const rows = (data ?? []) as EntryRowWithEmbeddedTags[];
+  return { rows: rows.map(shapeEntryForApi), total: count ?? 0 };
+}
+
 export async function markEmbeddingFailed(
   db: DbClient,
   entryId: string,
