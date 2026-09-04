@@ -37,11 +37,19 @@ valor em base64 da imagem "grande demais" (>5MB decodificados) estoura o
 `ARG_MAX` do shell (2MB neste sistema) quando passado como argumento de
 linha de comando; um arquivo de propriedades não tem esse limite.
 
+**`| tr -d '\n'` é obrigatório** — sem isso, o `base64` de algumas
+implementações (ex.: a do macOS, por padrão) quebra a saída em linhas de
+~76 caracteres; um valor de propriedade com quebra de linha no meio vira
+uma linha nova sem `chave=`, e o Hurl reconstrói a variável errada (só o
+1º pedaço, ou pior — confirmado num teste real: a requisição trava por
+~2min e volta com um erro de timeout do próprio motor de Edge Functions,
+em vez do 401 esperado, porque o corpo da requisição fica malformado).
+
 ```bash
 {
-  printf 'image_base64='; base64 -w0 fixtures/media/ocr_fixture_01.png; echo
-  printf 'image_base64_illegible='; base64 -w0 fixtures/media/ocr_fixture_ilegivel.png; echo
-  printf 'image_base64_oversized='; head -c 6000000 /dev/urandom | base64 -w0; echo
+  printf 'image_base64='; base64 fixtures/media/ocr_fixture_01.png | tr -d '\n'; echo
+  printf 'image_base64_illegible='; base64 fixtures/media/ocr_fixture_ilegivel.png | tr -d '\n'; echo
+  printf 'image_base64_oversized='; head -c 6000000 /dev/urandom | base64 | tr -d '\n'; echo
 } > /tmp/hurl-ocr-vars.properties
 
 hurl --test \
