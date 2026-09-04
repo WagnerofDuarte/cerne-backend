@@ -384,6 +384,38 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Fase 3 (T-034-T-041): `verify_jwt = false` em todas as 10 funções.
+#
+# Sem isso, o próprio motor de Edge Functions barra qualquer requisição
+# sem um JWT válido ANTES do código de dentro rodar — inclusive nos 3
+# endpoints de auth que não têm sessão prévia (signup/login/refresh), e
+# com um formato de erro genérico do runtime ("Missing authorization
+# header"), não o envelope de erro do projeto (§3.2). Cada função já faz
+# sua própria autenticação por dentro, via `gateway.ts` (T-031) — é ele
+# quem decide AUTH_EXPIRED/AUTH_INVALID no formato certo, não o runtime.
+# Descoberto rodando `supabase functions serve` de verdade pela 1ª vez
+# nesta fase (T-034-T-041, big-plan.md).
+[functions.auth-signup]
+verify_jwt = false
+[functions.auth-login]
+verify_jwt = false
+[functions.auth-refresh]
+verify_jwt = false
+[functions.auth-session]
+verify_jwt = false
+[functions.auth-logout]
+verify_jwt = false
+[functions.entries-create]
+verify_jwt = false
+[functions.entries-list]
+verify_jwt = false
+[functions.entries-get]
+verify_jwt = false
+[functions.entries-search]
+verify_jwt = false
+[functions.media-ocr]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
