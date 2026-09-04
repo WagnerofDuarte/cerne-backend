@@ -8,6 +8,8 @@
 
 import type { DbClient } from "./db.ts";
 
+export type EntrySource = "manual" | "audio" | "photo" | "chat";
+
 /** Linha crua do Postgres (mais o embed `entry_tags(tags(...))` do PostgREST) — ainda `snake_case`; a conversão para `camelCase` acontece só na borda da serialização (§3.1), nunca aqui. */
 export interface EntryRow {
   readonly id: string;
@@ -227,4 +229,68 @@ export async function markEmbeddingFailed(
     .single();
   if (error) throw error;
   return shapeEntryForApi(data as EntryRowWithEmbeddedTags);
+}
+
+// --- GET /entries/search (T-040) -------------------------------------------
+
+export interface FilterEntriesArgs {
+  readonly userId: string;
+  readonly limit: number;
+  readonly source?: EntrySource;
+  readonly dateFrom?: string;
+  readonly dateTo?: string;
+}
+
+/** Modo `filter_only` (§8.2: "q ausente ou vazio -> apenas filtros, sem chamar Voyage") — mesma ordenação de `GET /entries`, sem paginação (a busca não pagina, só limita). */
+export async function findEntriesByFilters(
+  db: DbClient,
+  args: FilterEntriesArgs,
+): Promise<Record<string, unknown>[]> {
+  let query = db.from("entries").select(ENTRY_SELECT_WITH_TAGS).eq("user_id", args.userId);
+  if (args.source) query = query.eq("source", args.source);
+  if (args.dateFrom) query = query.gte("occurred_at", args.dateFrom);
+  if (args.dateTo) query = query.lte("occurred_at", args.dateTo);
+
+  const { data, error } = await query
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: true })
+    .limit(args.limit);
+  if (error) throw error;
+  return ((data ?? []) as EntryRowWithEmbeddedTags[]).map(shapeEntryForApi);
+}
+
+export interface SemanticSearchArgs {
+  readonly queryEmbedding: readonly number[];
+  readonly limit: number;
+  readonly source?: EntrySource;
+  readonly dateFrom?: string;
+  readonly dateTo?: string;
+}
+
+/** Linha da RPC `entries_search_by_embedding` (migração 0011) — já vem com `tags` pronto (jsonb_agg no próprio SQL) e `distance` (cosseno, pgvector `<=>`); `shapeEntryForApi` não se aplica aqui (não há `entry_tags` para achatar). */
+export interface SemanticSearchRow extends EntryRow {
+  readonly tags: ReadonlyArray<{ id: string; name: string }>;
+  readonly distance: number;
+}
+
+/**
+ * Modo `semantic` (§8.2): varredura exata por distância de cosseno via a
+ * RPC `entries_search_by_embedding` (migração 0011) — o construtor de
+ * query fluente do PostgREST não ordena por expressão arbitrária, só por
+ * coluna, daí a função dedicada. `SECURITY INVOKER`: RLS de `entries`
+ * continua valendo, a função nem recebe `user_id`.
+ */
+export async function searchEntriesByEmbedding(
+  db: DbClient,
+  args: SemanticSearchArgs,
+): Promise<SemanticSearchRow[]> {
+  const { data, error } = await db.rpc("entries_search_by_embedding", {
+    p_query_embedding: args.queryEmbedding,
+    p_source: args.source ?? null,
+    p_date_from: args.dateFrom ?? null,
+    p_date_to: args.dateTo ?? null,
+    p_limit: args.limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as SemanticSearchRow[];
 }

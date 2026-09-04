@@ -3,12 +3,14 @@
 import { assert, assertEquals } from "./_test_utils.ts";
 import type { DbClient } from "./db.ts";
 import {
+  findEntriesByFilters,
   findEntryByChatMessageId,
   findEntryById,
   insertEntry,
   listEntries,
   markEmbeddingFailed,
   markEmbeddingReady,
+  searchEntriesByEmbedding,
   shapeEntryForApi,
 } from "./entries-repo.ts";
 
@@ -401,4 +403,89 @@ Deno.test("listEntries: cursor (keyset) pega só o que vem depois, na mesma orde
     cursor: { occurredAt: "2026-09-09T00:00:00Z", id: "b" },
   });
   assertEquals(rows.map((r) => r.id), ["c", "d"]);
+});
+
+// --- findEntriesByFilters / searchEntriesByEmbedding (T-040) ---------------
+
+Deno.test("findEntriesByFilters: sem cursor/limit+1 — traz exatamente `limit`, filtros combinam com AND", async () => {
+  const db = makeQueryFakeDb([
+    row("a", "2026-09-10T00:00:00Z", "manual"),
+    row("b", "2026-09-09T00:00:00Z", "audio"),
+    row("c", "2026-09-08T00:00:00Z", "audio"),
+  ]);
+  const rowsManual = await findEntriesByFilters(db, { userId: "user-1", limit: 20 });
+  assertEquals(rowsManual.map((r) => r.id), ["a", "b", "c"]);
+
+  const dbAudio = makeQueryFakeDb([
+    row("a", "2026-09-10T00:00:00Z", "manual"),
+    row("b", "2026-09-09T00:00:00Z", "audio"),
+    row("c", "2026-09-08T00:00:00Z", "audio"),
+  ]);
+  const rowsAudio = await findEntriesByFilters(dbAudio, {
+    userId: "user-1",
+    limit: 20,
+    source: "audio",
+  });
+  assertEquals(rowsAudio.map((r) => r.id), ["b", "c"]);
+});
+
+Deno.test("findEntriesByFilters: respeita o limit (sem o +1 de listEntries — busca não pagina)", async () => {
+  const db = makeQueryFakeDb([
+    row("a", "2026-09-10T00:00:00Z"),
+    row("b", "2026-09-09T00:00:00Z"),
+    row("c", "2026-09-08T00:00:00Z"),
+  ]);
+  const rows = await findEntriesByFilters(db, { userId: "user-1", limit: 2 });
+  assertEquals(rows.length, 2);
+});
+
+Deno.test("searchEntriesByEmbedding: repassa os parâmetros certos (p_ prefixado) e devolve as linhas da RPC", async () => {
+  let capturedArgs: unknown;
+  const db = {
+    rpc: (name: string, args: Record<string, unknown>) => {
+      assertEquals(name, "entries_search_by_embedding");
+      capturedArgs = args;
+      return Promise.resolve({
+        data: [{ id: "a", distance: 0.1, tags: [] }, { id: "b", distance: 0.4, tags: [] }],
+        error: null,
+      });
+    },
+  } as unknown as DbClient;
+
+  const rows = await searchEntriesByEmbedding(db, {
+    queryEmbedding: [0.1, 0.2, 0.3],
+    limit: 10,
+    source: "audio",
+    dateFrom: "2026-09-01T00:00:00Z",
+    dateTo: "2026-09-30T00:00:00Z",
+  });
+
+  assertEquals(capturedArgs, {
+    p_query_embedding: [0.1, 0.2, 0.3],
+    p_source: "audio",
+    p_date_from: "2026-09-01T00:00:00Z",
+    p_date_to: "2026-09-30T00:00:00Z",
+    p_limit: 10,
+  });
+  assertEquals(rows.map((r) => r.id), ["a", "b"]);
+});
+
+Deno.test("searchEntriesByEmbedding: filtros ausentes viram null (não undefined) na chamada da RPC", async () => {
+  let capturedArgs: unknown;
+  const db = {
+    rpc: (_name: string, args: Record<string, unknown>) => {
+      capturedArgs = args;
+      return Promise.resolve({ data: [], error: null });
+    },
+  } as unknown as DbClient;
+
+  await searchEntriesByEmbedding(db, { queryEmbedding: [0.1], limit: 20 });
+
+  assertEquals(capturedArgs, {
+    p_query_embedding: [0.1],
+    p_source: null,
+    p_date_from: null,
+    p_date_to: null,
+    p_limit: 20,
+  });
 });
