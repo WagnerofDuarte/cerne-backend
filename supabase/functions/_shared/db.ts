@@ -29,6 +29,21 @@ export function createUserClient(env: DbEnv, accessToken: string): DbClient {
   });
 }
 
+/**
+ * Cliente sem JWT de usuário — carrega só a `anon key` (papel `anon` no
+ * Postgres/PostgREST, nunca `service_role`). Gap-fill da Fase 3 (`_shared/
+ * deps.ts`): os 3 endpoints de auth sem sessão prévia (signup/login/
+ * refresh, `contract.auth === false`) não têm token de usuário para logar
+ * `X-Test-Fault` com — e mesmo nos demais, o passo 4a do gateway (onde a
+ * falha é interpretada e logada) roda antes do passo 5 (autenticar), então
+ * não há `AuthContext` pronto ainda nesse ponto do pipeline.
+ */
+export function createAnonClient(env: DbEnv): DbClient {
+  return createClient(env.supabaseUrl, env.supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 // --- RPCs do schema `experiment` (migração 0010) ---------------------------
 //
 // As três funções moram em `public.experiment_*` porque o PostgREST só
