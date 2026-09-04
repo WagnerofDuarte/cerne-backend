@@ -278,7 +278,7 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
 **Sobre as chamadas reais à Anthropic/Voyage:** `T-032` prova o mecanismo de cache (`callAnthropic`/`embed` sempre atrás do `replay`) com `fetch` mockado nos testes — nenhuma chamada de verdade foi feita, nem gastou nenhum crédito das contas do `GATE-04`/`GATE-05`. Isso só vai acontecer de propósito, uma vez, no `T-060` (Fase 6, modo `record`).
 
-**O que fica para o Wagner confirmar localmente, no mesmo espírito do `T-019v` da Fase 1:** rodar `supabase db reset` com as 10 migrações (0001–0010) juntas e `supabase test db` com os 13 arquivos pgTAP (71 da Fase 1 + 10 novos = 81 esperados) — a `0010` foi validada isoladamente contra a `0008` (não referencia nenhuma tabela de `0001`–`0007`/`0009`, risco de colisão baixo, mas não é a mesma coisa que a cadeia completa via Supabase CLI).
+**✅ Confirmado pelo Wagner em 04/09/2026, via Supabase CLI real (mesmo espírito do `T-019v` da Fase 1):** `supabase db reset` aplicou as 10 migrações (0001–0010) em sequência, sem erro; `supabase test db` rodou os 13 arquivos pgTAP e deu **`Files=13, Tests=81, Result: PASS`** — exatamente a soma prevista (71 da Fase 1 + 10 novos de `experiment_rpc.sql`). Confirma que a migração 0010 não colide com nada de 0001–0009 na cadeia real, não só isolada contra a 0008 como eu tinha testado neste sandbox.
 
 **Itens em aberto que já vinham da Fase 1, sem mudança:** `docs/roteiro_de_validacao.md` continua pendente (retomar perto da Fase 6); `fixtures/trancricoes.md` continua com esse nome.
 
