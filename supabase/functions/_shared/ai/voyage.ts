@@ -51,6 +51,12 @@ export interface VoyageEnv {
 
 const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
 
+/** Mesmo raciocínio do `ANTHROPIC_REQUEST_TIMEOUT_MS` (ai/anthropic.ts) — ver o comentário lá.
+ * Aqui importa ainda mais: `entries-create/embedding.ts` conta com uma falha *rápida* da Voyage
+ * para cair no fallback `status: 'failed'` (D8, "falha -> failed, mas a entrada permanece") sem
+ * segurar `POST /entries` até o teto externo do runtime. */
+export const VOYAGE_REQUEST_TIMEOUT_MS = 30_000;
+
 async function callVoyageRaw(request: VoyageRequest, env: VoyageEnv): Promise<VoyageResponse> {
   const fetchFn = env.fetchImpl ?? fetch;
   const res = await fetchFn(VOYAGE_API_URL, {
@@ -65,6 +71,7 @@ async function callVoyageRaw(request: VoyageRequest, env: VoyageEnv): Promise<Vo
       input_type: request.inputType,
       output_dimension: request.outputDimension,
     }),
+    signal: AbortSignal.timeout(VOYAGE_REQUEST_TIMEOUT_MS),
   });
 
   const body = await res.json();

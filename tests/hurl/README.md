@@ -52,6 +52,30 @@ de verdade num Mac — confirmar antes de assumir que "é só rodar"):
   Functions em vez do 401 esperado, porque o corpo da requisição fica
   malformado.
 
+**Atualização — a trava voltou mesmo com o `.properties` correto (sem
+quebra de linha), e a causa era outra:** o log local mostrava "wall clock
+duration warning" seguido de "early termination has been triggered" — não
+é um limite de tamanho de corpo, é o teto externo do próprio motor de Edge
+Functions (150s local/free, 400s pago) matando o isolate à força quando
+algo dentro dele nunca retorna. Investigando o código (`ai/anthropic.ts`,
+`ai/voyage.ts`, T-032): a chamada `fetch` para a Anthropic/Voyage não
+tinha nenhum timeout próprio — se a rede travar (egress do Docker local,
+DNS, etc.), a promise nunca resolve nem rejeita sozinha, e só o teto
+externo do runtime interrompe, produzindo esse log em vez do erro normal
+do envelope do projeto. Bate exatamente com o sintoma: as sub-requisições
+de `media_ocr.hurl` que nunca chegam a chamar a Anthropic (401 sem token,
+413 de imagem grande) respondiam na hora; só as duas que chamam
+`performOcr` de verdade (imagem ilegível, caminho feliz) travavam.
+Corrigido adicionando `signal: AbortSignal.timeout(30_000)` nos dois
+clientes (`ANTHROPIC_REQUEST_TIMEOUT_MS`/`VOYAGE_REQUEST_TIMEOUT_MS`) —
+uma chamada presa agora falha em 30s com um erro normal (`AI_GENERATION_
+TIMEOUT` no OCR; cai no fallback `status: 'failed'` já existente no
+embedding de `POST /entries`, D8) em vez de segurar o isolate até ele ser
+morto de fora. Se a trava ainda acontecer depois disso, o próximo suspeito
+é egress de rede do container Docker local até `api.anthropic.com`/
+`api.voyageai.com` (fora do que dá pra testar neste sandbox — sem acesso a
+Docker/rede real).
+
 ```bash
 {
   printf 'image_base64='; base64 < fixtures/media/ocr_fixture_01.png | tr -d '\n'; echo

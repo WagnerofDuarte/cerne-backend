@@ -120,6 +120,34 @@ Deno.test("envia os campos certos no corpo da requisição (model, max_tokens, h
   assertEquals(body.max_tokens, 64);
 });
 
+Deno.test("manda um AbortSignal no fetch — sem ele, uma chamada presa nunca falha sozinha (achado real, T-041)", async () => {
+  let capturedInit: RequestInit | undefined;
+  const fetchImpl = ((_url: string | URL | Request, init?: RequestInit) => {
+    capturedInit = init;
+    return Promise.resolve(
+      new Response(JSON.stringify(VALID_MESSAGES_RESPONSE), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  }) as typeof fetch;
+
+  const envelope = buildPiiEnvelope({
+    provider: "anthropic",
+    model: ANTHROPIC_MODELS.haiku45,
+    promptVersion: "v1",
+    text: "x",
+  });
+  await callAnthropic(
+    envelope,
+    { model: ANTHROPIC_MODELS.haiku45, messages: [{ role: "user", content: "x" }], maxTokens: 64 },
+    { anthropicApiKey: "chave-abc", fetchImpl, replay: OFF_REPLAY },
+  );
+
+  assert(capturedInit?.signal instanceof AbortSignal);
+  assertEquals(capturedInit.signal.aborted, false);
+});
+
 Deno.test("resposta não-2xx vira AnthropicApiError, propagado por withReplay", async () => {
   const envelope = buildPiiEnvelope({
     provider: "anthropic",
