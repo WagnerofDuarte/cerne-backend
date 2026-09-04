@@ -37,18 +37,25 @@ valor em base64 da imagem "grande demais" (>5MB decodificados) estoura o
 `ARG_MAX` do shell (2MB neste sistema) quando passado como argumento de
 linha de comando; um arquivo de propriedades não tem esse limite.
 
-**`| tr -d '\n'` é obrigatório** — sem isso, o `base64` de algumas
-implementações (ex.: a do macOS, por padrão) quebra a saída em linhas de
-~76 caracteres; um valor de propriedade com quebra de linha no meio vira
-uma linha nova sem `chave=`, e o Hurl reconstrói a variável errada (só o
-1º pedaço, ou pior — confirmado num teste real: a requisição trava por
-~2min e volta com um erro de timeout do próprio motor de Edge Functions,
-em vez do 401 esperado, porque o corpo da requisição fica malformado).
+Dois detalhes de portabilidade do `base64` entre sistemas (achados rodando
+de verdade num Mac — confirmar antes de assumir que "é só rodar"):
+
+- **Passar o arquivo por entrada padrão (`<`), não como argumento** — a
+  variante do macOS (BSD) não aceita `base64 arquivo`, só `base64 -i
+  arquivo` ou `base64 < arquivo`; a do Linux (GNU) aceita as duas formas.
+  `<` funciona nas duas.
+- **`| tr -d '\n'` é obrigatório** — sem isso, o `base64` quebra a saída em
+  linhas de ~76 caracteres por padrão; um valor de propriedade com quebra
+  de linha no meio vira uma linha nova sem `chave=`, e o Hurl reconstrói a
+  variável errada. Confirmado num teste real: sem o `tr`, a requisição
+  trava por ~2min e volta com um erro de timeout do motor de Edge
+  Functions em vez do 401 esperado, porque o corpo da requisição fica
+  malformado.
 
 ```bash
 {
-  printf 'image_base64='; base64 fixtures/media/ocr_fixture_01.png | tr -d '\n'; echo
-  printf 'image_base64_illegible='; base64 fixtures/media/ocr_fixture_ilegivel.png | tr -d '\n'; echo
+  printf 'image_base64='; base64 < fixtures/media/ocr_fixture_01.png | tr -d '\n'; echo
+  printf 'image_base64_illegible='; base64 < fixtures/media/ocr_fixture_ilegivel.png | tr -d '\n'; echo
   printf 'image_base64_oversized='; head -c 6000000 /dev/urandom | base64 | tr -d '\n'; echo
 } > /tmp/hurl-ocr-vars.properties
 
