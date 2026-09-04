@@ -93,33 +93,51 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 ## Fase 1 — Banco e Segurança
 **Prazo: 02/09 a 05/09/2026**
 
+**Nota de ambiente (02/09/2026):** o sandbox remoto onde o agente roda esta fase bloqueia, por política de rede, o download das imagens Docker do Supabase (`production.cloudfront.docker.com` responde 403 — negação de política, confirmado no proxy do ambiente). Isso significa que o agente **não consegue rodar `supabase start` / `db reset` / `test db` neste ambiente** para comprovar os critérios de conclusão por comando. Acordo com o Wagner: o agente escreve todo o código desta fase (migrações, seed, testes pgTAP) normalmente, na ordem do checklist, mas a *execução* dos comandos de verificação fica para o Wagner rodar na máquina local (onde o Docker Desktop do `GATE-01` já funciona). Por isso os itens `T-011`–`T-019` ficam com o código pronto mas **sem marcar `[x]`** até o Wagner confirmar o resultado local — ver `T-019v` abaixo.
+
 **Ordem de migração resolvida** (o plano técnico §5 deixa uma nota de reordenação em aberto — "criar `chat_sessions`/`chat_messages` antes de `entries`, pois `entries.chat_message_id` referencia `chat_messages`"; esta é a ordem de dependência válida a seguir em `T-011`–`T-018`, numeração exata dos arquivos a decidir na implementação):
 `0001 extensions` → `0002 profiles` (+ trigger `on_auth_user_created`) → `0003 chat_sessions + chat_messages` (+ triggers) → `0004 entries` (+ índices + trigger `bump_server_revision`) → `0005 tags + entry_tags` → `0006 insights` → `0007 export_jobs` → `0008 schema experiment` (`ai_replay_cache`, `fault_injection_log`) → `0009 políticas RLS` (todas as tabelas com dono).
 
-- [ ] `T-011` Migração de extensões: `pgcrypto`, `vector`, `pgmq`, `pg_cron`, `pgtap` — **Critério:** `supabase db reset` roda sem erro.
+- [x] `T-011` Migração de extensões: `pgcrypto`, `vector`, `pgmq`, `pg_cron`, `pgtap` — **Critério:** `supabase db reset` roda sem erro.
 
-- [ ] `T-012` Tabela `profiles` (id, email, display_name, biometric_enabled, persona, server_revision, timestamps) + trigger de criação a partir de `auth.users` — **Critério:** cadastro de usuário cria linha em `profiles`.
+- [x] `T-012` Tabela `profiles` (id, email, display_name, biometric_enabled, persona, server_revision, timestamps) + trigger de criação a partir de `auth.users` — **Critério:** cadastro de usuário cria linha em `profiles`.
 
-- [ ] `T-013` Tabelas `chat_sessions` e `chat_messages` + triggers (incremento de `user_message_count` e `last_user_message_at` ao inserir mensagem `role='user'`) — **Critério:** `user_message_count` incrementa corretamente.
+- [x] `T-013` Tabelas `chat_sessions` e `chat_messages` + triggers (incremento de `user_message_count` e `last_user_message_at` ao inserir mensagem `role='user'`) — **Critério:** `user_message_count` incrementa corretamente.
 
-- [ ] `T-014` Tabela `entries` (conteúdo íntegro, origem, `chat_message_id`, embedding 1024d + versionamento, status de embedding/PII, PII spans, duração de mídia) + índice de timeline + **índice único parcial de idempotência** (`user_id`, `chat_message_id` quando não nulo) + trigger `bump_server_revision` — **Critério:** índice de idempotência existe e é verificável via `\d entries`.
+- [x] `T-014` Tabela `entries` (conteúdo íntegro, origem, `chat_message_id`, embedding 1024d + versionamento, status de embedding/PII, PII spans, duração de mídia) + índice de timeline + **índice único parcial de idempotência** (`user_id`, `chat_message_id` quando não nulo) + trigger `bump_server_revision` — **Critério:** índice de idempotência existe e é verificável via `\d entries`.
 
-- [ ] `T-015` Tabelas `tags` e `entry_tags` (populadas só pelo seed, nenhum endpoint escreve nelas).
+- [x] `T-015` Tabelas `tags` e `entry_tags` (populadas só pelo seed, nenhum endpoint escreve nelas).
 
-- [ ] `T-016` Tabela `insights` com **UNIQUE** sobre `(session_id, trigger_type, trigger_key)` — **Critério:** insert duplicado é recusado pelo banco.
+- [x] `T-016` Tabela `insights` com **UNIQUE** sobre `(session_id, trigger_type, trigger_key)` — **Critério:** insert duplicado é recusado pelo banco.
 
-- [ ] `T-017` Tabela `export_jobs` com os dois status independentes (`status` do job e `narrative_status` da narrativa).
+- [x] `T-017` Tabela `export_jobs` com os dois status independentes (`status` do job e `narrative_status` da narrativa).
 
-- [ ] `T-018` Schema `experiment` (fora do alcance de RLS de usuário) com `ai_replay_cache` e `fault_injection_log` — **Critério:** papel `authenticated` não tem acesso ao schema.
+- [x] `T-018` Schema `experiment` (fora do alcance de RLS de usuário) com `ai_replay_cache` e `fault_injection_log` — **Critério:** papel `authenticated` não tem acesso ao schema.
 
-- [ ] `T-019` Políticas de RLS em **todas** as tabelas com dono: `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` + uma política por operação (`auth.uid() = user_id`) + `REVOKE ALL ... FROM anon` — **Critério:** `supabase test db` verde.
+- [x] `T-019` Políticas de RLS em **todas** as tabelas com dono: `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` + uma política por operação (`auth.uid() = user_id`) + `REVOKE ALL ... FROM anon` — **Critério:** `supabase test db` verde.
 
-- [ ] 🔴 **[MANUAL] `T-020` / `GATE-08`** — Fornecer as fixtures de mídia
+- [x] 🔴 **[MANUAL] `T-019v`** — Validar localmente os critérios de conclusão de `T-011`–`T-024` (item fora do backlog original — registrado por causa do bloqueio de rede descrito na "Nota de ambiente" acima)
+  - **O quê**, na sua máquina local (Docker Desktop já rodando, `GATE-01`):
+    1. `git pull origin fase1`
+    2. `supabase db reset` — conferir que sobe **sem erro** (isso já aplica as 9 migrações **e** carrega o seed com as 3 contas)
+    3. `\d entries` — confirmar o índice único parcial de idempotência (`entries_chat_message_uniq`)
+    4. Tentar inserir duas linhas em `insights` com o mesmo `(session_id, trigger_type, trigger_key)` e confirmar que a segunda é recusada pelo banco
+    5. Cadastrar um usuário de teste (fora das 3 contas do seed) e confirmar que aparece uma linha em `profiles` com o mesmo `id`
+    6. Conferir a contagem do seed: `select count(*) from entries where user_id = 'a0000000-0000-0000-0000-000000000001'` deve dar **34**; trocando o `user_id` pelo de `cenario-uma@cerne.test`/`cenario-vazio@cerne.test`, **1** e **0**
+    7. **Rodar o backfill de embeddings** (só depois do `db reset` acima): `deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts`, com `VOYAGE_API_KEY` no ambiente (conecta direto no Postgres local, não precisa de `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`) — sem isso a conta A fica com 33 entradas em `embedding_status='pending'` para sempre, e a prova do RF06 (`T-024`) não tem embedding pra buscar
+    8. `supabase test db` — conferir **100% verde** (a suíte já roda 71/71 num Postgres nativo equivalente neste sandbox, mas o real é o Supabase CLI)
+    9. **Rodar a prova do RF06** (só depois do passo 7): `deno run --allow-net --allow-env scripts/prove-rf06.ts`, com `VOYAGE_API_KEY` — reporta se pelo menos 1 dos 3 pares encontrou a entrada plantada no top-5
+  - **Por que agora:** é a única forma de comprovar por comando os critérios de `T-011`–`T-024` enquanto este ambiente remoto não pode baixar as imagens Docker do Supabase. Os passos 7 e 9 são os únicos que não são só "confirmar o já escrito" — são ações que só podem acontecer na sua máquina (chamam a Voyage de verdade).
+  - **Como confirmo:** você reporta o resultado de `supabase db reset`, das verificações pontuais (3–6), de `supabase test db` (passo 8), e das saídas dos dois scripts (7 e 9). Com a confirmação, marco `T-011`–`T-024` como `[x]`.
+  - **✅ Concluído pelo Wagner em 04/09/2026 — os 9 passos confirmados, nada falhou:** `db reset` sem erro, índice de idempotência presente, UNIQUE de `insights` recusou o duplicado, cadastro criou `profiles`, contagens 34/1/0 batendo, backfill gravou 33/33 embeddings sem falha (achado e corrigido um bug real no meio do caminho — ver nota em `T-022`), `supabase test db` 71/71 verde, e a prova do RF06 passou nos **3** pares (não só no mínimo de 1 exigido). Fase 1 encerrada dentro do prazo (05/09/2026).
+
+- [x] 🔴 **[MANUAL] `T-020` / `GATE-08`** — Fornecer as fixtures de mídia (concluída 02/09/2026)
   - **O quê:** Fornecer três arquivos em `fixtures/media/`: `audio_fixture_01.wav` (42s, fala em português, com transcrição conhecida documentada em `fixtures/transcricoes.md`), `ocr_fixture_01.png` (foto de caderno manuscrito, texto legível), `ocr_fixture_ilegivel.png` (imagem sem texto reconhecível).
   - **Por que agora:** esses arquivos ficam **imutáveis** a partir da `T-060` — regenerar qualquer um depois invalida o cache de replay inteiro.
-  - **Como confirmo:** os três arquivos existem em `fixtures/media/`.
+  - **Como confirmo:** os três arquivos existem em `fixtures/media/`. ✅ Confirmado — `audio_fixture_01.wav` (50,4s, PCM 16-bit estéreo 48kHz, fala em português), `ocr_fixture_01.png` (caderno manuscrito, texto legível), `ocr_fixture_ilegivel.png` (página em branco, sem texto).
+  - **Divergências encontradas ao verificar (não bloqueiam o GATE, mas ficam registradas):** (1) o áudio tem 50,4s, não os 42s descritos no plano — só importa se algum script/roteiro futuro comparar a duração exata; (2) o arquivo de transcrição foi versionado como `fixtures/trancricoes.md` (sem o "s" de "trans"), não `fixtures/transcricoes.md` como os documentos-fonte nomeiam — os dois nomes vão coexistir como divergência até o Wagner confirmar se renomeia.
 
-- [ ] 🔴 **[MANUAL] `T-021` / `GATE-09`** — Aprovar textos literais e pares semânticos
+- [ ] 🔴 **[MANUAL] `T-021` / `GATE-09`** — Aprovar textos literais e pares semânticos (**parcial** — pares semânticos aprovados 02/09/2026; textos do roteiro pendentes, ver nota)
   - **O quê:** Aprovar os sete textos literais do roteiro e os três pares semânticos do RF06, definidos **antes** de qualquer teste (para não escolher o resultado a posteriori):
 
     | Par | Termo buscado | Entrada plantada (não contém o termo) |
@@ -130,8 +148,9 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
     Regra de aceite: **pelo menos um dos três** precisa passar para o critério do RF06 ser satisfeito.
   - **Como confirmo:** `fixtures/textos.json` e `fixtures/pares_semanticos.md` existem e estão aprovados.
+  - **Status em 02/09/2026:** ✅ os 3 textos dos pares semânticos foram propostos pelo agente e **aprovados pelo Wagner**, gravados em `fixtures/pares_semanticos.md` — suficiente para desbloquear `T-022` e `T-024`. ⏳ Os **sete textos literais do roteiro** ficam pendentes: dependem de `docs/roteiro_de_validacao.md`, que não existe no repositório e por sua vez depende de dois documentos-fonte também ausentes (`Cerne_-_prototipo_final.html` e `Requisitos_e_Fluxo_de_Telas_TCC.md` — ver "Itens em aberto"). O Wagner pediu para retomar isso mais perto da Fase 6 (`T-060`, previsto 21–22/09) — lembrete agendado pelo agente. `fixtures/textos.json` só será criado quando o roteiro existir.
 
-- [ ] `T-022` `supabase/seed/seed.sql` idempotente, com âncora de data fixa (`ANCORA = 2026-09-23T09:41:00Z`, documentada em `supabase/seed/ancora.md`, datas do seed sempre relativas a ela) e as três contas:
+- [x] `T-022` `supabase/seed/seed.sql` idempotente, com âncora de data fixa (`ANCORA = 2026-09-23T09:41:00Z`, documentada em `supabase/seed/ancora.md`, datas do seed sempre relativas a ela) e as três contas:
 
   | Conta | E-mail | Conteúdo |
   |---|---|---|
@@ -141,9 +160,73 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
   Senha única via `TEST_ACCOUNT_PASSWORD`. Embeddings da conta A são gerados de verdade via Voyage na primeira execução e reaproveitados depois. — **Critério:** `supabase db reset` carrega 34+1+0 entradas.
 
-- [ ] `T-023` Suíte pgTAP completa (ver Fase 1 de testes, abaixo) — **Critério:** `supabase test db` 100% verde.
+  **Status em 02/09/2026:** código escrito (`supabase/seed/seed.sql`, `supabase/seed/ancora.md`) e validado por dry-run funcional neste sandbox (Postgres 16 nativo + as 9 migrações + mocks de `auth.users`/`auth.uid`/roles, mesmo esquema do dry-run de `T-011`–`T-019`): 34+1+0 entradas, 10 dias distintos na conta A, fontes 14/8/6/6, `chat_sessions.user_message_count` = 4/3/3 (trigger correto), 4 tags, 13 `entry_tags`, zero linha com `source`/`chat_message_id` incoerente, senha bate via `crypt()`, RLS isola cada conta corretamente, e reexecutar o `seed.sql` não duplica nada (idempotência confirmada). **Ainda não roda de verdade no Supabase CLI** — mesmo bloqueio de rede da nota de ambiente, dentro de `T-019v`.
 
-- [ ] `T-024` **Prova do RF06** — busca por `ansiedade` (ou `cansaço`/`gratidão`) no seed encontra o par plantado correspondente. ⚠️ **Se falhar nos três pares, parar e reportar** — é condição de viabilidade do RF06, não um detalhe.
+  Duas lacunas que os documentos-fonte não resolviam, preenchidas de forma pragmática (revisar se achar errado):
+  - **Senha:** `seed.sql` é SQL puro, sem acesso a variável de ambiente do shell — fixei o literal `Cerne-Teste-2026!` dentro do seed (hash via `crypt()`). `TEST_ACCOUNT_PASSWORD` precisa ser configurado com esse valor exato. Detalhado em `supabase/seed/ancora.md`.
+  - **Embeddings reais da conta A:** SQL puro não faz chamada HTTP. `seed.sql` grava as 34 entradas da conta A com `embedding_status='pending'` (exceto a que fica propositalmente `'failed'`); um script novo, `scripts/backfill-seed-embeddings.ts` (Deno), precisa ser rodado **uma vez** depois de `supabase db reset` — chama a Voyage de verdade e preenche os embeddings. É idempotente (só toca `pending`). **Ação pendente do Wagner:** depois de rodar `supabase db reset` localmente, rodar `deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts` com `VOYAGE_API_KEY` no ambiente — sem isso a prova do RF06 (`T-024`) não tem embedding pra buscar.
+
+  **Bug real encontrado em 04/09/2026, durante o `T-019v` do Wagner (não estava no dry-run porque meu mock de `auth`/roles não reproduz o gateway PostgREST):** a versão original do script ia pela API (`@supabase/supabase-js` + `SUPABASE_SERVICE_ROLE_KEY`), e o formato novo de chave do Supabase (`sb_secret_...`, que substituiu o JWT clássico de `service_role`) não estava sendo reconhecido como privilégio total pelo PostgREST local — a RLS barrava com `permission denied for table entries`, mesmo com a chave certa (confirmado com o Wagner: mesma URL e mesma chave que `supabase status` imprime). Corrigido reescrevendo o script pra conectar direto no Postgres via `postgres` (superusuário local, ignora RLS de forma garantida) em vez de passar pela API — mesma abordagem que `prove-rf06.ts` já usava. Variável `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` não são mais necessárias, só `VOYAGE_API_KEY` (e `SUPABASE_DB_URL` se a porta do Postgres local não for a `54322` padrão — o default do script já bate com o que `supabase status` mostra). De brinde, achei e corrigi o mesmo tipo de bug de antes (função/tipo do `pgvector` no schema `extensions`, não `public`) nos dois scripts, testado desta vez contra Postgres de verdade antes de mandar pro Wagner.
+
+- [x] `T-023` Suíte pgTAP completa (ver Fase 1 de testes, abaixo) — **Critério:** `supabase test db` 100% verde.
+
+  **Status em 03/09/2026:** 12 arquivos escritos em `supabase/tests/` (os 8 `rls_*.sql` de cada tabela com dono, `rls_experiment.sql`, `constraints.sql`, `cascade_delete.sql`, `triggers.sql`) — isolamento positivo/negativo, escrita cruzada bloqueada, RLS forçada, `anon` sem leitura, trava do schema `experiment`, os 4 constraints de `T-014`/`T-016`/`T-013`, cascata de delete nas 8 tabelas, e os dois triggers (`server_revision`, `user_message_count`). Validado com `pg_prove` neste sandbox (rebuild completo do zero, 71/71 verdes).
+
+  **✅ Confirmado pelo Wagner em 04/09/2026 com `supabase test db` real** (Supabase CLI, máquina local): `Files=12, Tests=71, Result: PASS` — 100% verde, batendo exatamente com a validação do sandbox.
+
+  Detalhe técnico que vale registrar: os testes de RLS trocam de papel (`SET ROLE authenticated`/`anon`) para simular cada usuário, mas o pgTAP (`ok`/`is`/`throws_ok`) fica inacessível depois da troca (falta `GRANT` nos objetos internos dele para esses papéis) — cada teste captura o resultado antes de voltar (`RESET ROLE`) usando `set_config`/`GET DIAGNOSTICS`, e só então chama a asserção do pgTAP. Também: o `throws_ok` de 3 argumentos (`sql, code, description`) **não** funciona como parece — o meio vira "mensagem esperada", não "código". O jeito certo é a forma de 4 argumentos com o código como inteiro: `throws_ok(sql, 23505, null, description)`.
+
+- [x] `T-024` **Prova do RF06** — busca por `ansiedade` (ou `cansaço`/`gratidão`) no seed encontra o par plantado correspondente. ⚠️ **Se falhar nos três pares, parar e reportar** — é condição de viabilidade do RF06, não um detalhe.
+
+  **Status em 03/09/2026:** `scripts/prove-rf06.ts` (Deno) escrito — conecta direto no Postgres local (o endpoint `GET /entries/search` só existe na `T-040`, Fase 3), gera o embedding de consulta dos 3 termos via Voyage (`input_type='query'`) e faz varredura exata por distância de cosseno (`<=>` do pgvector, sem índice aproximado) contra as entradas `ready` da conta A, checando se a entrada plantada aparece no top-5.
+
+  **✅ RF06 comprovado pelo Wagner em 04/09/2026 — os 3 pares passaram, não só o mínimo de 1 exigido:**
+
+  | Par | Termo | Posição no top-5 | Distância de cosseno |
+  |---|---|---|---|
+  | 1 | `ansiedade` | **1º lugar** | 0,5155 |
+  | 2 | `cansaço` | **1º lugar** | 0,4911 |
+  | 3 | `gratidão` | 4º lugar | 0,6925 |
+
+  Os pares 1 e 2 até bateram o próprio texto plantado como o mais próximo semanticamente de todos os 34 registrados na conta — resultado bem acima da régua mínima do RF06.
+
+### Encerramento da Fase 1 — notas para quem retomar (concluída 04/09/2026, dentro do prazo — 05/09 —, 10/10 itens confirmados)
+
+Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fase 1 foi executada.
+
+**Onde o código foi escrito vs. onde foi validado de verdade:** todo o código (`T-011`–`T-024`) foi escrito num sandbox remoto (não a máquina local onde a Fase 0 rodou), cuja política de rede bloqueia o download das imagens Docker do Supabase — não dava para rodar `supabase start`/`db reset`/`test db` de verdade lá. O código foi validado o quanto dava por lá (Postgres 16 nativo + pgvector + pgtap via `apt`, com o schema `auth` do GoTrue simulado à mão) e depois **confirmado de verdade pelo Wagner na máquina local**, via `T-019v` — ver os 9 passos abaixo.
+
+**O que está pronto, commitado e pushed no branch `fase1`** (`T-011`–`T-024`):
+- 9 migrações (`supabase/migrations/0001`–`0009`): schema inteiro, RLS em todas as 8 tabelas com dono, schema `experiment` trancado
+- `supabase/seed/seed.sql` + `ancora.md`: as 3 contas (34/1/0 entradas), idempotente
+- `scripts/backfill-seed-embeddings.ts`: gera os embeddings reais da conta A via Voyage (conecta direto no Postgres, sem depender de nenhum formato de chave de API)
+- `scripts/prove-rf06.ts`: a prova da busca semântica (SQL puro não tem endpoint de busca ainda — isso é da Fase 3)
+- 12 arquivos pgTAP em `supabase/tests/` (71 testes)
+- `fixtures/media/` (os 3 arquivos), `fixtures/pares_semanticos.md` (aprovado pelo Wagner)
+
+**Os 9 passos do `T-019v`, todos confirmados pelo Wagner em 04/09/2026:**
+1. `git pull origin fase1` ✅
+2. `supabase db reset` — sobe sem erro ✅
+3. `\d entries` — índice `entries_chat_message_uniq` presente ✅
+4. Insert duplicado em `insights` (mesmo `session_id`+`trigger_type`+`trigger_key`) recusado ✅
+5. Cadastro de um usuário novo (fora do seed) cria linha em `profiles` ✅
+6. Contagens do seed batem: conta A = 34, `cenario-uma` = 1, `cenario-vazio` = 0 ✅
+7. `backfill-seed-embeddings.ts` — 33/33 embeddings gravados, 0 falhas ✅ (achado e corrigido um bug real no meio do caminho — ver abaixo)
+8. `supabase test db` — 71/71 testes, `Result: PASS` ✅
+9. `prove-rf06.ts` — **os 3 pares** passaram (não só o mínimo de 1 exigido pelo RF06): par 1 (`ansiedade`) e par 2 (`cansaço`) em 1º lugar no ranking de similaridade, par 3 (`gratidão`) em 4º ✅
+
+**Um bug real encontrado e corrigido durante a validação** (não aparecia no sandbox, porque o mock de `auth`/roles de lá não reproduz o gateway PostgREST de verdade): a primeira versão de `backfill-seed-embeddings.ts` ia pela API do Supabase com a `service_role key`, e o formato novo de chave (`sb_secret_...`) não estava sendo reconhecido como privilégio total pelo PostgREST local — a RLS barrava com "permission denied", mesmo com a chave certa. Corrigido trocando pra conexão direta no Postgres como superusuário (mesma abordagem que `prove-rf06.ts` já usava), o que elimina de vez qualquer dependência de formato de chave. De brinde, corrigido o mesmo tipo de bug (schema `extensions` vs `public`) que teria quebrado o passo 9 também.
+
+**Itens em aberto que atravessam a Fase 1, ainda sem solução — não bloqueiam o encerramento, mas ficam registrados:**
+- **`docs/roteiro_de_validacao.md`** (os 7 textos literais do roteiro, parte do `GATE-09`) continua pendente — depende de dois documentos-fonte ausentes do repositório. Combinamos de retomar perto da Fase 6; lembrete agendado para 18/09.
+- **`fixtures/trancricoes.md`** foi versionado com esse nome (sem o "s" de "trans") em vez de `fixtures/transcricoes.md`, como os documentos-fonte chamam. Ainda não decidido se renomeia.
+- **Duração real do áudio fixture:** 50,4s, não os 42s descritos no plano técnico. Só importa se algum script futuro comparar o valor exato.
+
+**Duas lacunas de arquitetura que os documentos-fonte não resolviam, preenchidas por mim e documentadas em `supabase/seed/ancora.md`** (revisar se parecer errado): a senha das 3 contas é um literal fixo dentro do `seed.sql` (`Cerne-Teste-2026!`, já que SQL puro não lê variável de ambiente — `TEST_ACCOUNT_PASSWORD` precisa bater com esse valor), e os embeddings reais da conta A vêm de um script complementar em vez do próprio seed (SQL puro não chama HTTP).
+
+**Sobre o Wagner (perfil de quem vai ler as respostas):** não é desenvolvedor backend — mesma orientação da Fase 0, explicar conceitos técnicos com analogias simples antes/junto da justificativa de qualquer decisão.
+
+**Gates manuais (🔴 [MANUAL]) — lembrete de processo:** ao chegar num item assim marcado, parar, explicar o que fazer e por quê, esperar confirmação explícita do Wagner, e só então verificar.
 
 ---
 
