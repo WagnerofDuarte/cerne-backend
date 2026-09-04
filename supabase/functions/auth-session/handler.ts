@@ -12,33 +12,21 @@
 // `_shared/gotrue.ts`).
 
 import type { GatewayContext, HandlerResult } from "../_shared/gateway.ts";
-import { throwError } from "../_shared/errors.ts";
 import { decodeJwtClaims } from "../_shared/gotrue.ts";
+import { fetchServerRevision } from "../_shared/profiles-repo.ts";
 import { buildDataEnvelope } from "../_shared/serialize.ts";
 
 export async function handleGetSession(ctx: GatewayContext): Promise<HandlerResult> {
   const auth = ctx.auth!; // contract.auth === true — gateway garante isto antes do handler rodar.
   const claims = decodeJwtClaims(auth.accessToken);
-
-  const { data: profile, error } = await auth.db
-    .from("profiles")
-    .select("server_revision")
-    .eq("id", auth.userId)
-    .single();
-  // Não deveria acontecer para um usuário autenticado de verdade — o
-  // trigger `on_auth_user_created` (T-012) garante uma linha em
-  // `profiles` para todo `auth.users`. Caminho defensivo, não um estado
-  // esperado do produto.
-  if (error || !profile) {
-    throwError("NOT_FOUND", "perfil do usuário autenticado não encontrado");
-  }
+  const serverRevision = await fetchServerRevision(auth.db, auth.userId);
 
   return {
     status: 200,
     envelope: buildDataEnvelope({
       user: { id: claims.sub, email: claims.email },
       expires_at: claims.exp,
-      server_revision: profile.server_revision,
+      server_revision: serverRevision,
     }),
   };
 }
