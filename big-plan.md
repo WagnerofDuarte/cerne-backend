@@ -233,17 +233,56 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 ## Fase 2 — Contratos e Gateway
 **Prazo: 06/09 a 09/09/2026**
 
-- [ ] `T-025` Módulo `errors` com os 13 códigos da taxonomia e mapeamento para HTTP/`retryable` — **Critério:** teste unitário do mapeamento passa.
-- [ ] `T-026` Módulo `contracts` — schemas Zod dos 23 endpoints (fonte única do OpenAPI) — **Critério:** todos os schemas compilam.
-- [ ] `T-027` Módulo `serialize` (conversão `snake_case` ↔ `camelCase` + envelope de resposta) — **Critério:** teste de ida e volta passa.
-- [ ] `T-028` Módulo `clock` respeitando o cabeçalho `X-Test-Now` — **Critério:** teste com relógio congelado passa.
-- [ ] `T-029` Módulo `faults` (interpretação de `X-Test-Fault`, os 6 tipos) + tabela `fault_injection_log` — **Critério:** os 6 tipos disparam e registram.
-- [ ] `T-030` Módulo `replay` com os 4 modos (`off`/`record`/`replay`/`replay_strict`) e envelope canônico de impressão digital — **Critério:** mesmo input produz sempre a mesma `cache_key`.
-- [ ] `T-031` Módulo `gateway` (ponto de entrada único) na ordem obrigatória: `X-Request-Id` → `X-Test-Key` → `X-Test-Now` → `X-Test-Fault` (antes da autenticação para `offline`, depois para os demais) → autenticar → validar corpo (Zod) → handler → serializar → tratar exceção — **Critério:** requisição sem token retorna `AUTH_EXPIRED`.
-- [ ] `T-032` Clientes `ai/anthropic` e `ai/voyage`, sempre atrás do cache de replay — **Critério:** segunda chamada idêntica retorna `hit`.
-- [ ] `T-033` `scripts/gen-openapi.ts` gerando `contracts/openapi.yaml` a partir dos schemas Zod, com verificação de drift no CI — **Critério:** job `contracts` verde.
+- [x] `T-025` Módulo `errors` com os 13 códigos da taxonomia e mapeamento para HTTP/`retryable` — **Critério:** teste unitário do mapeamento passa.
+- [x] `T-026` Módulo `contracts` — schemas Zod dos 23 endpoints (fonte única do OpenAPI) — **Critério:** todos os schemas compilam.
+- [x] `T-027` Módulo `serialize` (conversão `snake_case` ↔ `camelCase` + envelope de resposta) — **Critério:** teste de ida e volta passa.
+- [x] `T-028` Módulo `clock` respeitando o cabeçalho `X-Test-Now` — **Critério:** teste com relógio congelado passa.
+- [x] `T-029` Módulo `faults` (interpretação de `X-Test-Fault`, os 6 tipos) + tabela `fault_injection_log` — **Critério:** os 6 tipos disparam e registram.
+- [x] `T-030` Módulo `replay` com os 4 modos (`off`/`record`/`replay`/`replay_strict`) e envelope canônico de impressão digital — **Critério:** mesmo input produz sempre a mesma `cache_key`.
+- [x] `T-031` Módulo `gateway` (ponto de entrada único) na ordem obrigatória: `X-Request-Id` → `X-Test-Key` → `X-Test-Now` → `X-Test-Fault` (antes da autenticação para `offline`, depois para os demais) → autenticar → validar corpo (Zod) → handler → serializar → tratar exceção — **Critério:** requisição sem token retorna `AUTH_EXPIRED`.
+- [x] `T-032` Clientes `ai/anthropic` e `ai/voyage`, sempre atrás do cache de replay — **Critério:** segunda chamada idêntica retorna `hit`.
+- [x] `T-033` `scripts/gen-openapi.ts` gerando `contracts/openapi.yaml` a partir dos schemas Zod, com verificação de drift no CI — **Critério:** job `contracts` verde.
 
-- [ ] ⚠️ **Ponto de decisão do cronograma:** se esta fase não fechar até **09/09**, cortar o RF05 (exportação) do escopo — maior economia isolada disponível (remove `pgmq`, `pg_cron`, Storage, geração de PDF e os 3 endpoints de exportação da Fase 5). Decidir isso **nesta data**, não depois.
+- [x] ⚠️ **Ponto de decisão do cronograma:** se esta fase não fechar até **09/09**, cortar o RF05 (exportação) do escopo — maior economia isolada disponível (remove `pgmq`, `pg_cron`, Storage, geração de PDF e os 3 endpoints de exportação da Fase 5). Decidir isso **nesta data**, não depois. **Não se aplica — a Fase 2 fechou em 04/09/2026, antes mesmo do prazo começar (06/09). RF05 mantido no escopo.**
+
+### Encerramento da Fase 2 — notas para quem retomar (concluída 04/09/2026, 5 dias antes do prazo, 9/9 itens + o ponto de decisão)
+
+Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fase 2 foi executada.
+
+**Diferença importante em relação à Fase 1:** o bloqueio de rede deste sandbox (não baixa as imagens Docker do Supabase) segue valendo, mas a Fase 2 quase não depende disso — `T-025`–`T-033` são módulos Deno/TypeScript puros, sem precisar de `supabase start`. Foi possível instalar o próprio Deno (via `npm install -g deno` — o pacote `deno` no npm baixa o binário, e `registry.npmjs.org` não está bloqueado neste sandbox, diferente de `deno.land`) e rodar `deno test`/`deno lint`/`deno fmt` de verdade a cada módulo, um a um, com resultado real — não um dry-run aproximado. A única peça desta fase que toca banco (a migração `0010_experiment_rpc.sql`, ver abaixo) foi validada da mesma forma que a Fase 1 fez: Postgres 16 + pgvector + pgtap nativos via `apt`, não o Supabase CLI.
+
+**O que está pronto, commitado no branch `fase2`** (um commit por tarefa, todos com a suíte de teste daquele módulo rodando e passando antes do commit):
+- `errors.ts` (T-025): os 13 códigos, `CerneError`, `throwError()`.
+- `contracts/zod/*.ts` + `registry.ts` (T-026): os 23 endpoints, request/response, registro único consumido pelo gateway e pelo gerador de OpenAPI.
+- `serialize.ts` (T-027): conversão `snake_case`↔`camelCase`, envelope de sucesso/erro.
+- `clock.ts` + `test-mode.ts` (T-028): relógio congelável por `X-Test-Now`.
+- `faults.ts` (T-029): interpretação dos 6 tipos de `X-Test-Fault`.
+- `replay.ts` (T-030): envelope canônico, `cache_key`, os 4 modos.
+- `gateway.ts` (T-031): o pipeline inteiro amarrando os módulos acima.
+- `ai/anthropic.ts` + `ai/voyage.ts` (T-032): clientes genéricos, sempre atrás do `replay`.
+- `scripts/gen-openapi.ts` + `scripts/openapi/zod-to-json-schema.ts` (T-033): gera `contracts/openapi.yaml` (versionado, 23 operações); `.github/workflows/ci.yml` ganhou o job `contracts` de verdade (troca o placeholder).
+- `supabase/migrations/0010_experiment_rpc.sql` + `supabase/tests/experiment_rpc.sql`: ver "Duas peças fora do backlog original" abaixo.
+
+**Números finais:** 131 testes automatizados novos (121 `deno test` + 10 `pgtap`), todos verdes; `deno lint`/`deno fmt` limpos em todo arquivo escrito nesta fase.
+
+**Duas peças fora do backlog original, necessárias e documentadas onde vivem:**
+1. **`supabase/functions/_shared/db.ts`** — a Seção 7 do plano técnico lista o módulo `db` na camada compartilhada, mas nenhum `T-0NN` foi aberto pra ele. Nasceu dentro do `T-029`, porque `faults`/`replay`/`gateway` precisavam de um cliente Supabase com o JWT do usuário para existir.
+2. **`supabase/migrations/0010_experiment_rpc.sql`** — descoberta real ao implementar `T-029`/`T-030`: o schema `experiment` (migração `0008`) tranca `authenticated`/`anon` de propósito, mas o log de falha e o cache de replay precisam ser escritos *durante* uma requisição real, não só por um worker de fila — e nunca com `service_role` aí (regra nº5). Solução: 3 funções `SECURITY DEFINER` de superfície mínima, expostas via RPC. **Dois bugs reais só apareceram rodando contra Postgres de verdade, não escrevendo o SQL:** (a) `experiment.*` não é um schema exposto pelo PostgREST — as funções tiveram que morar em `public.experiment_*`; (b) `REVOKE ... FROM anon` sozinho não fecha nada, porque toda função nova já nasce `EXECUTE`-por-`PUBLIC` — precisou `REVOKE ... FROM PUBLIC` explícito antes. Coberto por `supabase/tests/experiment_rpc.sql` (10 casos, validados com `pg_prove` de verdade).
+
+**Lacunas do documento-fonte preenchidas de forma pragmática, documentadas inline onde aparecem no código (revisar se achar errado):**
+- Forma de `tags[]` (`{id, name}`) e `piiSpans` (`{start, end, type}`) dentro de `Entry` — `contracts/zod/common.ts`.
+- Forma de `sources`/`totals` no `GET /dashboard/aggregate` — `contracts/zod/dashboard.ts`.
+- `session`/`user` de autenticação propositalmente permissivos (`.catchall`), por serem proxy fino do GoTrue (D1) — `contracts/zod/auth.ts`.
+- `historyHash` concatena `role:content` sem separador entre mensagens, seguindo a Seção 9.2 ao pé da letra (ela não menciona separador) — risco teórico de colisão aceito em vez de inventar um delimitador — `replay.ts`.
+- Efeito de `offline`: como uma Edge Function não tem como derrubar o socket TCP sem responder, a aproximação é uma `Promise<Response>` que nunca resolve — `gateway.ts`.
+
+**Sobre as chamadas reais à Anthropic/Voyage:** `T-032` prova o mecanismo de cache (`callAnthropic`/`embed` sempre atrás do `replay`) com `fetch` mockado nos testes — nenhuma chamada de verdade foi feita, nem gastou nenhum crédito das contas do `GATE-04`/`GATE-05`. Isso só vai acontecer de propósito, uma vez, no `T-060` (Fase 6, modo `record`).
+
+**O que fica para o Wagner confirmar localmente, no mesmo espírito do `T-019v` da Fase 1:** rodar `supabase db reset` com as 10 migrações (0001–0010) juntas e `supabase test db` com os 13 arquivos pgTAP (71 da Fase 1 + 10 novos = 81 esperados) — a `0010` foi validada isoladamente contra a `0008` (não referencia nenhuma tabela de `0001`–`0007`/`0009`, risco de colisão baixo, mas não é a mesma coisa que a cadeia completa via Supabase CLI).
+
+**Itens em aberto que já vinham da Fase 1, sem mudança:** `docs/roteiro_de_validacao.md` continua pendente (retomar perto da Fase 6); `fixtures/trancricoes.md` continua com esse nome.
+
+**Sobre o Wagner (perfil de quem vai ler as respostas):** mesma orientação das fases anteriores — não é desenvolvedor backend, explicar conceitos técnicos com analogias simples antes/junto da justificativa de qualquer decisão.
 
 ---
 
