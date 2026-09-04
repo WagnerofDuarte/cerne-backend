@@ -18,9 +18,24 @@ da URL, extraído pelo próprio `index.ts`).
 
 ## Como rodar
 
-Pré-requisitos: `supabase start` + `supabase functions serve` rodando
-localmente (GATE-01, Docker), banco com o seed da Fase 1 carregado
-(`supabase db reset`).
+Pré-requisitos: `supabase start` + `supabase functions serve --env-file
+supabase/.env.local` rodando localmente (GATE-01, Docker), banco com o
+seed da Fase 1 carregado (`supabase db reset`).
+
+**O `--env-file` não é opcional** — sem ele, nenhuma variável de ambiente
+(`ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `PROMPT_VERSION`, ...) chega até a
+função, e `requireEnv` (`_shared/deps.ts`) lança um erro síncrono no
+top-level do `index.ts`, fora de qualquer handler — isso derruba o worker
+inteiro antes de processar a requisição, mesmo em endpoints/sub-passos
+que não deveriam precisar de IA (ex.: a sub-requisição "sem token" do
+`media_ocr.hurl`, que só checa auth). O sintoma na prática: a requisição
+fica pendurada até o teto de wall-clock do runtime (150s local) e só
+então volta um `504` — mesma aparência de trava que a nota abaixo
+descreve, mas causa totalmente diferente (achado real, 04/09/2026).
+`supabase/.env.local` está no `.gitignore` — nunca é versionado; precisa
+de `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `PROMPT_VERSION`, `REPLAY_MODE`
+(ver Seção 3.6 do plano técnico para a lista completa e onde conseguir
+cada chave).
 
 ```bash
 hurl --test \
