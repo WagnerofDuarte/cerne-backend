@@ -384,37 +384,60 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
-# Fase 3 (T-034-T-041): `verify_jwt = false` em todas as 10 funções.
+# Fase 3 (T-034-T-041): `verify_jwt = false` + `import_map` explícito nas
+# 10 funções.
 #
-# Sem isso, o próprio motor de Edge Functions barra qualquer requisição
-# sem um JWT válido ANTES do código de dentro rodar — inclusive nos 3
-# endpoints de auth que não têm sessão prévia (signup/login/refresh), e
-# com um formato de erro genérico do runtime ("Missing authorization
-# header"), não o envelope de erro do projeto (§3.2). Cada função já faz
-# sua própria autenticação por dentro, via `gateway.ts` (T-031) — é ele
-# quem decide AUTH_EXPIRED/AUTH_INVALID no formato certo, não o runtime.
+# `verify_jwt = false`: sem isso, o próprio motor de Edge Functions barra
+# qualquer requisição sem um JWT válido ANTES do código de dentro rodar —
+# inclusive nos 3 endpoints de auth que não têm sessão prévia (signup/
+# login/refresh), e com um formato de erro genérico do runtime ("Missing
+# authorization header"), não o envelope de erro do projeto (§3.2). Cada
+# função já faz sua própria autenticação por dentro, via `gateway.ts`
+# (T-031) — é ele quem decide AUTH_EXPIRED/AUTH_INVALID no formato certo,
+# não o runtime.
+#
+# `import_map = "../deno.json"`: o `deno.json` deste projeto (com os
+# atalhos de pacote — "zod" -> npm:zod, etc. — usados em todo o código
+# desde a Fase 2) fica na RAIZ do repositório, não dentro de `supabase/`.
+# `deno test`/`deno check` (rodados da raiz) o encontram sozinhos; o
+# motor de Edge Functions, servindo cada função isolada, não olha pra
+# fora de `supabase/` por padrão — sem isto, falha ao iniciar
+# ("Relative import path 'zod' not prefixed with / or ./ or ..").
+# Caminho relativo a este arquivo (`supabase/config.toml`), por isso
+# `../` sobe um nível até a raiz.
+#
 # Descoberto rodando `supabase functions serve` de verdade pela 1ª vez
 # nesta fase (T-034-T-041, big-plan.md).
 [functions.auth-signup]
 verify_jwt = false
+import_map = "../deno.json"
 [functions.auth-login]
 verify_jwt = false
+import_map = "../deno.json"
 [functions.auth-refresh]
 verify_jwt = false
+import_map = "../deno.json"
 [functions.auth-session]
 verify_jwt = false
+import_map = "../deno.json"
 [functions.auth-logout]
 verify_jwt = false
+import_map = "../deno.json"
 [functions.entries-create]
 verify_jwt = false
+import_map = "../deno.json"
 [functions.entries-list]
 verify_jwt = false
+import_map = "../deno.json"
 [functions.entries-get]
 verify_jwt = false
+import_map = "../deno.json"
 [functions.entries-search]
 verify_jwt = false
+import_map = "../deno.json"
 [functions.media-ocr]
 verify_jwt = false
+import_map = "../deno.json"
 
 [analytics]
 enabled = true
