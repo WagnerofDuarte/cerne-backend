@@ -73,6 +73,9 @@ async function main() {
   let algumParPassou = false;
 
   try {
+    // o tipo vector e os operadores do pgvector moram no schema extensions
+    await sql`set search_path to public, extensions`;
+
     const pendentes = await sql`
       select count(*)::int as n
       from entries
