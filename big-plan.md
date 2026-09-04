@@ -312,6 +312,10 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
   168/168 testes verdes (`deno test -A --parallel`, repo inteiro), `deno lint`/`deno fmt` limpos. **Ainda não validado contra `supabase functions serve` real** — ver nota de ambiente da Fase 3.
 - [ ] `T-038` `GET /entries` com paginação, filtros e **tags embutidas** (evita N+1) — **Critério:** `tags_embutidas.hurl` verde.
+
+  **Status em 10/09/2026:** código escrito e testado (`supabase/functions/entries-list/`). Paginação por **keyset** (cursor opaco `{occurredAt, id}` em base64url), não por OFFSET — mesma condição de "depois do cursor" que o `ORDER BY occurred_at DESC, id ASC` usa para desempate. `listEntries` (`entries-repo.ts`, estendido) sempre busca `limit + 1` de propósito, para o handler decidir `nextCursor`/corte de página sem uma 2ª consulta. Tags embutidas reaproveitam o join já criado no T-035. `serverRevision` (não é coluna de `entries`, mesma leitura do T-035) é injetado igual em cada item da página, mais o header `X-Data-Version`. Filtros `source`/`dateFrom`/`dateTo` combinam com AND por composição natural do PostgREST — testado com um fake de query builder que filtra/ordena/pagina de verdade (não *canned responses*), porque o que importa provar aqui é exatamente esse comportamento composto.
+
+  181/181 testes verdes, lint/fmt limpos. Mesma nota de ambiente — não validado contra `supabase functions serve` real.
 - [ ] `T-039` `GET /entries/:id` — **Critério:** recurso de outro usuário retorna 404 `NOT_FOUND`.
 - [ ] `T-040` `GET /entries/search` (semântica + filtros combinando com **AND**, debounce é responsabilidade do app) — **Critério:** `busca_and.hurl` e `busca_semantica.hurl` verdes.
 - [ ] `T-041` `POST /media/ocr` (imagem nunca é persistida — só o SHA-256 entra no cache) — **Critério:** imagem grande demais → 413; imagem ilegível → `OCR_NO_TEXT`.
