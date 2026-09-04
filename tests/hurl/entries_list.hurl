@@ -34,7 +34,7 @@ GET {{base_url}}/entries-list?limit=5&cursor={{next_cursor}}
 Authorization: Bearer {{access_token}}
 HTTP 200
 [Asserts]
-jsonpath "$.data[?(@.id=='{{first_page_first_id}}')]" count == 0
+jsonpath "$.data[?(@.id=='{{first_page_first_id}}')]" not exists
 
 # limit inválido (> 50) -> VALIDATION_ERROR
 GET {{base_url}}/entries-list?limit=999

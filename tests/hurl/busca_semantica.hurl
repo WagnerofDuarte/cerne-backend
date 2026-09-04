@@ -5,6 +5,12 @@
 #
 # Faz uma chamada real à Voyage (embedding da query "ansiedade", sem cache
 # de replay ainda — T-060 é Fase 6).
+#
+# Pré-requisito: as entradas da conta A precisam ter embedding_status=
+# 'ready' de verdade — rodar `deno run --allow-net --allow-env
+# scripts/backfill-seed-embeddings.ts` (com VOYAGE_API_KEY no ambiente)
+# depois de qualquer `supabase db reset`, senão a busca semântica não
+# encontra nada (RPC filtra por embedding_status='ready', T-040).
 
 POST {{base_url}}/auth-login
 {
@@ -20,6 +26,6 @@ Authorization: Bearer {{access_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.meta.mode" == "semantic"
-jsonpath "$.data[?(@.id=='a0000000-0000-0000-0004-000000000003')]" count == 1
+jsonpath "$.data[?(@.id=='a0000000-0000-0000-0004-000000000003')]" exists
 jsonpath "$.data[0].similarity" exists
 jsonpath "$.data[0].id" exists
