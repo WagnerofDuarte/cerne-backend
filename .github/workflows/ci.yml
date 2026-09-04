@@ -6,8 +6,31 @@ on:
   pull_request:
 
 jobs:
-  placeholder:
+  # T-033 (Fase 2, Plano técnico §11.4): "Gera OpenAPI do Zod -> git diff
+  # --exit-code contracts/openapi.yaml". Sem dependência do Supabase CLI/
+  # Docker (ao contrário de `db`/`api`/`determinism`, que chegam nas fases
+  # seguintes) — só Deno, então é o primeiro job real desta pipeline.
+  #
+  # Também roda `deno test` de tudo (contracts/, supabase/functions/_shared/,
+  # scripts/) nesta mesma etapa: é a suíte de unidade que os critérios de
+  # conclusão de T-025-T-032 exigem, e este é hoje o único job com Deno
+  # configurado para rodá-la. Um job dedicado só a isso pode nascer mais
+  # pra frente se fizer sentido — por ora, bundlar aqui evita que um
+  # _shared/*.ts quebrado suba verde por falta de alguém rodando os testes.
+  contracts:
     runs-on: ubuntu-latest
     steps:
-      - name: Placeholder
-        run: echo "CI vazia — pipeline será preenchida nas próximas fases (ver big-plan.md)"
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: deno test (contracts/, supabase/functions/_shared/, scripts/)
+        run: deno test -A --parallel
+
+      - name: Gerar contracts/openapi.yaml a partir do Zod
+        run: deno run -A scripts/gen-openapi.ts
+
+      - name: Falhar se o OpenAPI gerado divergir do commitado
+        run: git diff --exit-code contracts/openapi.yaml
