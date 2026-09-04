@@ -98,6 +98,27 @@ export function readAiEnv(): AiEnv {
   };
 }
 
+// --- Ambiente do OCR (T-041, único consumidor de OCR_MAX_BYTES) --------
+
+export interface OcrEnv extends AiEnv {
+  readonly ocrMaxBytes: number;
+}
+
+/** `5242880` (5MB) — valor documentado na Seção 3.6 do plano técnico — é o default se `OCR_MAX_BYTES` estiver ausente ou não for um número positivo. */
+const DEFAULT_OCR_MAX_BYTES = 5_242_880;
+
+function parseOcrMaxBytes(raw: string | undefined): number {
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_OCR_MAX_BYTES;
+}
+
+export function readOcrEnv(): OcrEnv {
+  return {
+    ...readAiEnv(),
+    ocrMaxBytes: parseOcrMaxBytes(Deno.env.get("OCR_MAX_BYTES")),
+  };
+}
+
 /**
  * Monta as `ReplayDeps` (T-030) a partir de um cliente de banco já
  * escolhido pelo chamador — os endpoints de IA sempre exigem sessão

@@ -22,9 +22,27 @@ export const ANTHROPIC_MODELS = {
   haiku45: "claude-haiku-4-5-20251001",
 } as const;
 
+/** Bloco de conteúdo multimodal (T-041, OCR via visão) — mesmo formato da Messages API. */
+export interface AnthropicTextContent {
+  readonly type: "text";
+  readonly text: string;
+}
+
+export interface AnthropicImageContent {
+  readonly type: "image";
+  readonly source: {
+    readonly type: "base64";
+    readonly media_type: string;
+    readonly data: string;
+  };
+}
+
+export type AnthropicContentInput = AnthropicTextContent | AnthropicImageContent;
+
 export interface AnthropicMessage {
   readonly role: "user" | "assistant";
-  readonly content: string;
+  /** String para texto puro (chat, PII) — array de blocos para conteúdo multimodal (OCR, T-041). */
+  readonly content: string | readonly AnthropicContentInput[];
 }
 
 export interface AnthropicRequest {
