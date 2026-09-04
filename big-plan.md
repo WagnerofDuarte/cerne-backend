@@ -337,7 +337,47 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
   Testado explicitamente que a imagem em si nunca entra no cache — só o SHA-256 dos bytes (D17). 203/203 testes Deno verdes (repo inteiro), lint/fmt limpos.
 
-  **Com isso, todo o código da Fase 3 (T-034–T-041, 10 diretórios de função) está escrito e testado.** Falta a suíte Hurl (`tests/hurl/`, ainda vazia) e a validação real via `supabase functions serve` — mesmo bloqueio de Docker de toda a fase, fica para o Wagner rodar localmente.
+  **Com isso, todo o código da Fase 3 (T-034–T-041, 10 diretórios de função) está escrito e testado.**
+
+**Status em 10/09/2026:** `tests/hurl/` escrita (10 arquivos + README) — sintaxe conferida com `hurlfmt` e semântica das asserções validada de ponta a ponta contra um mock HTTP local (não é o Supabase real). Ver `tests/hurl/README.md` e a nota de encerramento abaixo.
+
+### Encerramento da Fase 3 — notas para quem retomar (código completo em 10/09/2026, dentro do prazo — 10 a 13/09 —, faltando confirmação local)
+
+Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fase 3 foi executada.
+
+**Onde o código foi escrito vs. onde foi validado de verdade:** mesmo padrão da Fase 1 — este sandbox remoto não consegue baixar as imagens Docker do Supabase, então não dá para rodar `supabase functions serve` nem a suíte Hurl contra o stack real aqui. Diferente da Fase 1, porém, esta fase conseguiu uma validação bem mais forte que um dry-run isolado:
+- **T-040 (migração `0011`)** foi validada com Postgres 16 + pgvector + pgtap **de verdade** neste sandbox (mesmo método da Fase 1) — não só a migração nova isolada, mas a cadeia inteira `0001`–`0011` revalidada: `Files=14, Tests=91, Result: PASS`.
+- **A suíte Hurl** foi validada rodando de ponta a ponta contra um mock HTTP local (Deno, descartado, não versionado) que imita as 10 respostas — pegou 2 bugs reais de sintaxe Hurl (documentados em `tags_embutidas.hurl` e no README) que só apareceriam rodando de verdade.
+- **Toda a lógica de negócio** (203 testes `deno test`, repo inteiro) roda com Anthropic/Voyage/banco mockados via injeção de dependência — nenhuma chamada real foi feita nesta fase (ao contrário do que a suíte Hurl fará quando o Wagner rodar de verdade — ver custo abaixo).
+
+**O que está pronto, commitado e pushed no branch `fase3`** (`T-034`–`T-041`, um commit por tarefa):
+- 10 diretórios de função (`supabase/functions/`): `auth-signup`, `auth-login`, `auth-refresh`, `auth-session`, `auth-logout`, `entries-create`, `entries-list`, `entries-get`, `entries-search`, `media-ocr`.
+- Migração nova: `supabase/migrations/0011_entries_search_rpc.sql` (RPC `entries_search_by_embedding`, `SECURITY INVOKER`) + `supabase/tests/entries_search_rpc.sql` (10 casos pgTAP).
+- Módulos compartilhados novos (gap-fill, mesmo espírito de `db.ts` da Fase 2): `_shared/gotrue.ts`, `_shared/deps.ts`, `_shared/entries-repo.ts`, `_shared/profiles-repo.ts`. `_shared/ai/anthropic.ts` ganhou suporte a conteúdo multimodal (retrocompatível).
+- `tests/hurl/` — 10 arquivos + `README.md` com a convenção de URL e como rodar.
+
+**Decisão de estrutura registrada nesta fase (não estava explícita nos documentos-fonte):** um diretório de função por endpoint, nome = `id` do `registry.ts` com `.` → `-`. Path params (`:id`) viram o último segmento da URL, extraído por cada `index.ts` — o `gateway.ts` não roteia. Todo `tests/hurl/*.hurl` chama `{{base_url}}/<nome-da-função>`, não o caminho REST do OpenAPI.
+
+**Lacunas do documento-fonte preenchidas de forma pragmática nesta fase, documentadas inline onde aparecem no código (revisar se achar errado):**
+- `serverRevision` de `Entry` (§8.2) não é coluna de `entries` — só existe em `profiles`. Cada `Entry` da API reporta o valor atual do perfil, lido a cada resposta (`profiles-repo.ts`).
+- Erro de GoTrue em signup/login → `AUTH_INVALID`; em refresh → `AUTH_EXPIRED` (nenhum dos 13 códigos é específico para "credencial rejeitada pelo provedor").
+- Erro de OCR (chamada à Anthropic falhou, tool_use ausente, shape fora do schema) → `AI_GENERATION_TIMEOUT` (mesmo código genérico de insight/dashboard).
+
+**O que falta para marcar `T-034`–`T-041` como `[x]`** (mesmo espírito do `T-019v` da Fase 1) — ação do Wagner, na máquina local (Docker Desktop rodando, `GATE-01`):
+1. `git pull origin fase3`
+2. `supabase db reset` — confirmar que as 11 migrações (agora com a `0011` nova) + o seed rodam sem erro
+3. `supabase test db` — conferir **91/91** (81 da Fase 1/2 + 10 novos de `entries_search_rpc.sql`)
+4. `supabase functions serve --env-file supabase/.env.local` — subir as 10 funções novas
+5. Rodar a suíte Hurl (comando completo em `tests/hurl/README.md`, incluindo o `--variables-file` para `media_ocr.hurl`) — conferir os 10 arquivos verdes
+6. Reportar o resultado — com a confirmação, marco `T-034`–`T-041` como `[x]`
+
+**Custo esperado do passo 5:** `entries_create.hurl`, `idempotencia_rf10.hurl`, `busca_semantica.hurl` e `entries_search.hurl` fazem chamadas reais à Anthropic (PII) e à Voyage (embedding) — nenhum cache de replay populado ainda (isso só acontece de propósito no `T-060`, Fase 6). Custo pequeno, dentro dos tetos do `GATE-04`/`GATE-05`.
+
+**Itens em aberto que já vinham de fases anteriores, sem mudança:** `docs/roteiro_de_validacao.md` continua pendente (retomar perto da Fase 6, lembrete de 18/09); `fixtures/trancricoes.md` continua com esse nome.
+
+**Sobre o Wagner (perfil de quem vai ler as respostas):** mesma orientação das fases anteriores — não é desenvolvedor backend, explicar conceitos técnicos com analogias simples antes/junto da justificativa de qualquer decisão.
+
+**Gates manuais (🔴 [MANUAL]) — lembrete de processo:** nenhum nesta fase (todas as 8 tarefas são do agente) — mas o passo de validação local acima segue o mesmo ritual de reportar e aguardar confirmação antes de marcar `[x]`.
 
 ---
 
