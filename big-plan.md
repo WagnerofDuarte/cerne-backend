@@ -320,7 +320,24 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
   **Status em 10/09/2026:** código escrito e testado (`supabase/functions/entries-get/`). Reaproveita `findEntryById` (já criado no T-035). Entrada de outro usuário e entrada inexistente produzem a mesma resposta (404) pelo mesmo caminho de código — nunca 403 (D7). `id` sintaticamente inválido (não é uuid) também vira 404 sem consultar o banco. 184/184 testes verdes.
 - [ ] `T-040` `GET /entries/search` (semântica + filtros combinando com **AND**, debounce é responsabilidade do app) — **Critério:** `busca_and.hurl` e `busca_semantica.hurl` verdes.
+
+  **Status em 10/09/2026:** código escrito e **validado com Postgres de verdade neste sandbox** (Postgres 16 + pgvector + pgtap via `apt`, mesmo método da Fase 1/2 — não é dry-run). Descoberta real fora do backlog original: o PostgREST não ordena por expressão arbitrária (`embedding <=> $1`) via o construtor de query fluente do supabase-js, só por coluna — precisou de uma migração nova (`0011_entries_search_rpc.sql`), a primeira desde a `0010` (Fase 2). A função `entries_search_by_embedding` é `SECURITY INVOKER` (diferente das RPCs de `experiment` da 0010, que são `DEFINER`) — de propósito: rodando com o papel de quem chamou, a RLS de `entries` (já forçada desde a Fase 1) continua valendo por baixo, e a função nem recebe `user_id` como parâmetro, então não existe como pedir dado de outra pessoa. Mesma varredura exata já validada em `scripts/prove-rf06.ts` (T-024), agora exposta como RPC. Tags embutidas via `jsonb_agg` correlacionado dentro da própria função SQL.
+
+  `supabase/tests/entries_search_rpc.sql` — 10 casos novos, todos verdes via `pg_prove` de verdade: ordena por distância ASC, desempate por id ASC, isolamento por RLS (mesmo sem passar `user_id`), `embedding_status != 'ready'` fica de fora, filtros `source`/data em AND, tags embutidas, GRANT restrito a `authenticated`, `limit` respeitado. **A suíte inteira (0001–0011) foi revalidada junto:** `Files=14, Tests=91, Result: PASS` — os 81 testes anteriores (Fases 1/2) mais os 10 novos, sem colisão.
+
+  Handler (`entries-search/`): `q` ausente/vazio nunca chama a Voyage (`meta.mode='filter_only'`); `q` presente gera o embedding da consulta (`input_type='query'`, D8) e usa a RPC (`meta.mode='semantic'`), `similarity = 1 - distância`. Voyage indisponível no modo semântico → `EMBEDDING_FAILED` (502).
+
+  192/192 testes Deno verdes, lint/fmt limpos. A suíte Hurl e a validação real via `supabase functions serve` (que precisa do Docker, ainda bloqueado neste sandbox) ficam para o Wagner.
+
 - [ ] `T-041` `POST /media/ocr` (imagem nunca é persistida — só o SHA-256 entra no cache) — **Critério:** imagem grande demais → 413; imagem ilegível → `OCR_NO_TEXT`.
+
+  **Status em 10/09/2026 — última tarefa de código da Fase 3:** código escrito e testado (`supabase/functions/media-ocr/`). Tamanho checado nos bytes DECODIFICADOS (não no texto base64, ~33% maior) antes de qualquer chamada à Anthropic. Saída estruturada via tool use (mesmo padrão do T-036), texto vazio (ou só espaço em branco) → `OCR_NO_TEXT`. `_shared/ai/anthropic.ts` (Fase 2) ganhou suporte a conteúdo multimodal (bloco de imagem base64), retrocompatível com o uso existente em texto puro (PII, T-036) — extensão necessária que não estava prevista, já que só o OCR precisa de visão nesta fase.
+
+  **Lacuna preenchida pragmaticamente (revisar se parecer errado):** nenhum dos 13 códigos é específico para "a chamada de OCR falhou" (diferente de PII/embedding, que têm `PII_CHECK_FAILED`/`EMBEDDING_FAILED` dedicados) — mapeado para `AI_GENERATION_TIMEOUT`, o mesmo código genérico já usado para falha de geração por IA em insight/dashboard.
+
+  Testado explicitamente que a imagem em si nunca entra no cache — só o SHA-256 dos bytes (D17). 203/203 testes Deno verdes (repo inteiro), lint/fmt limpos.
+
+  **Com isso, todo o código da Fase 3 (T-034–T-041, 10 diretórios de função) está escrito e testado.** Falta a suíte Hurl (`tests/hurl/`, ainda vazia) e a validação real via `supabase functions serve` — mesmo bloqueio de Docker de toda a fase, fica para o Wagner rodar localmente.
 
 ---
 
