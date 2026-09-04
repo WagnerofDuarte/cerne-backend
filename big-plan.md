@@ -317,6 +317,8 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
   181/181 testes verdes, lint/fmt limpos. Mesma nota de ambiente — não validado contra `supabase functions serve` real.
 - [ ] `T-039` `GET /entries/:id` — **Critério:** recurso de outro usuário retorna 404 `NOT_FOUND`.
+
+  **Status em 10/09/2026:** código escrito e testado (`supabase/functions/entries-get/`). Reaproveita `findEntryById` (já criado no T-035). Entrada de outro usuário e entrada inexistente produzem a mesma resposta (404) pelo mesmo caminho de código — nunca 403 (D7). `id` sintaticamente inválido (não é uuid) também vira 404 sem consultar o banco. 184/184 testes verdes.
 - [ ] `T-040` `GET /entries/search` (semântica + filtros combinando com **AND**, debounce é responsabilidade do app) — **Critério:** `busca_and.hurl` e `busca_semantica.hurl` verdes.
 - [ ] `T-041` `POST /media/ocr` (imagem nunca é persistida — só o SHA-256 entra no cache) — **Critério:** imagem grande demais → 413; imagem ilegível → `OCR_NO_TEXT`.
 
