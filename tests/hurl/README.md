@@ -38,11 +38,33 @@ de `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `PROMPT_VERSION`, `REPLAY_MODE`
 cada chave).
 
 ```bash
-hurl --test \
+hurl --test --jobs 1 \
   --variable base_url=http://127.0.0.1:54321/functions/v1 \
   --variable test_account_password='Cerne-Teste-2026!' \
   tests/hurl/*.hurl
 ```
+
+**`--jobs 1` não é opcional quando se roda mais de um arquivo de uma vez**
+— achado real, 07/09/2026: o `hurl --test` roda os arquivos em paralelo
+por padrão (`--parallel: Run files in parallel (default in test mode)`,
+confirmado no `hurl --help`, versão 6.1.1). Quase todo arquivo desta
+suíte faz login na mesma conta seed (`cenario-cheio@cerne.test`) — em
+paralelo, vários logins pra essa conta disparam quase simultaneamente, e
+o `auth.hurl` chama `POST /auth/logout` nessa janela (escopo padrão do
+GoTrue é `global`: revoga todas as sessões do usuário, não só a que
+originou o logout). Isso colide com um bug aberto e conhecido do próprio
+Supabase Auth com múltiplas sessões concorrentes por usuário
+([supabase/auth#2036](https://github.com/supabase/auth/issues/2036)) —
+um logout acaba invalidando sessões de outros logins concorrentes pela
+mesma conta, não só a própria. Sintoma visto rodando de verdade: arquivos
+que ainda tinham requisições pendentes com o token de `cenario-cheio`
+(`media_ocr.hurl`, `idempotencia_rf10.hurl`) receberam `401` em vez do
+status esperado, mesmo cada um tendo feito seu próprio login com sucesso
+poucos milissegundos antes. `--jobs 1` força execução sequencial, arquivo
+por arquivo — mais lento, mas sem essa colisão. Não é um bug do código
+deste projeto (`gateway.ts`/`auth-logout` fazem exatamente o que o
+contrato pede — "proxy fino do GoTrue", D1); é uma característica do
+`hurl` moderno colidindo com uma conta compartilhada entre arquivos.
 
 `media_ocr.hurl` precisa de três variáveis extras, geradas a partir das
 fixtures da `T-020` (não versionadas em base64 dentro do `.hurl` — os
