@@ -370,6 +370,35 @@ Deno.test("fault 'ai_timeout': não curto-circuita — handler roda e recebe ctx
   assertEquals(capturedFault, { type: "ai_timeout" });
 });
 
+// --- Resposta em streaming SSE (T-044) -----------------------------------
+
+Deno.test("handler que devolve { stream } produz Response text/event-stream com o mesmo X-Request-Id", async () => {
+  const req = new Request("https://example.test/test/echo", {
+    method: "POST",
+    headers: { Authorization: "Bearer token-valido", "X-Request-Id": "req-sse-1" },
+    body: JSON.stringify({ text: "oi" }),
+  });
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode("event: done\ndata: {}\n\n"));
+      controller.close();
+    },
+  });
+  const res = await runGateway(
+    req,
+    echoContract,
+    {},
+    () => Promise.resolve({ stream }),
+    baseDeps(),
+  );
+  assertEquals(res.status, 200);
+  assertEquals(res.headers.get("Content-Type"), "text/event-stream; charset=utf-8");
+  assertEquals(res.headers.get("X-Request-Id"), "req-sse-1");
+  const body = await res.text();
+  assert(body.includes("event: done"));
+});
+
 Deno.test("sem X-Test-Key correto, X-Test-Fault é ignorado e a requisição segue normal", async () => {
   const req = new Request("https://example.test/test/echo", {
     method: "POST",
