@@ -3,7 +3,12 @@
 
 import { assert, assertEquals, assertThrowsAsync } from "../_test_utils.ts";
 import { buildPiiEnvelope, type ReplayDeps } from "../replay.ts";
-import { ANTHROPIC_MODELS, AnthropicApiError, callAnthropic } from "./anthropic.ts";
+import {
+  ANTHROPIC_MODELS,
+  AnthropicApiError,
+  callAnthropic,
+  streamAnthropic,
+} from "./anthropic.ts";
 
 const OFF_REPLAY: ReplayDeps = {
   mode: "off",
@@ -197,4 +202,128 @@ Deno.test("mode 'off': nunca consulta o cache, chama sempre", async () => {
     replay: OFF_REPLAY,
   });
   assertEquals(calls.count, 2);
+});
+
+// --- streamAnthropic (T-046, Fase 4) ---------------------------------------
+
+function sseFrame(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+/** Simula a resposta em streaming da Messages API — um `Response` cujo corpo é um `ReadableStream` de bytes, entregue em `chunkBoundaries` pedaços arbitrários (para provar que o parser reagrupa frames cortados no meio). */
+function fakeStreamingFetch(
+  frames: string[],
+  opts: { chunkBoundaries?: number[]; status?: number } = {},
+): typeof fetch {
+  const fullBody = frames.join("");
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(fullBody);
+  const boundaries = opts.chunkBoundaries ?? [bytes.length]; // um chunk só, por padrão
+
+  return (() =>
+    Promise.resolve(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            let offset = 0;
+            for (const end of boundaries) {
+              controller.enqueue(bytes.slice(offset, end));
+              offset = end;
+            }
+            if (offset < bytes.length) controller.enqueue(bytes.slice(offset));
+            controller.close();
+          },
+        }),
+        { status: opts.status ?? 200 },
+      ),
+    )) as typeof fetch;
+}
+
+const request = {
+  model: ANTHROPIC_MODELS.sonnet5,
+  system: "system prompt",
+  messages: [{ role: "user" as const, content: "oi" }],
+  maxTokens: 256,
+};
+
+Deno.test("streamAnthropic: acumula content_block_delta e chama onDelta na ordem", async () => {
+  const frames = [
+    sseFrame("message_start", { type: "message_start" }),
+    sseFrame("content_block_start", { type: "content_block_start" }),
+    sseFrame("content_block_delta", { delta: { type: "text_delta", text: "olá" } }),
+    sseFrame("content_block_delta", { delta: { type: "text_delta", text: ", mundo" } }),
+    sseFrame("content_block_stop", {}),
+    sseFrame("message_delta", { delta: { stop_reason: "end_turn" } }),
+    sseFrame("message_stop", {}),
+  ];
+  const deltas: string[] = [];
+  const result = await streamAnthropic(request, {
+    anthropicApiKey: "chave",
+    fetchImpl: fakeStreamingFetch(frames),
+  }, (t) => deltas.push(t));
+  assertEquals(deltas, ["olá", ", mundo"]);
+  assertEquals(result.text, "olá, mundo");
+  assertEquals(result.stopReason, "end_turn");
+});
+
+Deno.test("streamAnthropic: reagrupa um frame cortado no meio entre dois chunks de rede", async () => {
+  const frames = [sseFrame("content_block_delta", { delta: { type: "text_delta", text: "abc" } })];
+  const fullBody = frames.join("");
+  // corta bem no meio do frame — antes que a linha \n\n final tenha sido lida
+  const cutPoint = Math.floor(fullBody.length / 2);
+  const deltas: string[] = [];
+  const result = await streamAnthropic(
+    request,
+    {
+      anthropicApiKey: "chave",
+      fetchImpl: fakeStreamingFetch(frames, { chunkBoundaries: [cutPoint, fullBody.length] }),
+    },
+    (t) => deltas.push(t),
+  );
+  assertEquals(deltas, ["abc"]);
+  assertEquals(result.text, "abc");
+});
+
+Deno.test("streamAnthropic: eventos desconhecidos (ex.: ping) são ignorados sem quebrar o parsing", async () => {
+  const frames = [
+    sseFrame("ping", {}),
+    sseFrame("content_block_delta", { delta: { type: "text_delta", text: "ok" } }),
+    sseFrame("ping", {}),
+  ];
+  const result = await streamAnthropic(
+    request,
+    { anthropicApiKey: "chave", fetchImpl: fakeStreamingFetch(frames) },
+    () => {},
+  );
+  assertEquals(result.text, "ok");
+});
+
+Deno.test("streamAnthropic: sem stop_reason no stream -> stopReason null", async () => {
+  const frames = [sseFrame("content_block_delta", { delta: { type: "text_delta", text: "x" } })];
+  const result = await streamAnthropic(
+    request,
+    { anthropicApiKey: "chave", fetchImpl: fakeStreamingFetch(frames) },
+    () => {},
+  );
+  assertEquals(result.stopReason, null);
+});
+
+Deno.test("streamAnthropic: resposta não-2xx vira AnthropicApiError (mesmo tratamento de callAnthropic)", async () => {
+  const fetchImpl = (() =>
+    Promise.resolve(
+      new Response(JSON.stringify({ error: { message: "sobrecarregado" } }), { status: 529 }),
+    )) as typeof fetch;
+  const err = await assertThrowsAsync(() =>
+    streamAnthropic(request, { anthropicApiKey: "chave", fetchImpl }, () => {})
+  );
+  assert(err instanceof AnthropicApiError);
+  assertEquals((err as AnthropicApiError).status, 529);
+});
+
+Deno.test("streamAnthropic: resposta 2xx sem corpo -> AnthropicApiError", async () => {
+  const fetchImpl = (() => Promise.resolve(new Response(null, { status: 200 }))) as typeof fetch;
+  const err = await assertThrowsAsync(() =>
+    streamAnthropic(request, { anthropicApiKey: "chave", fetchImpl }, () => {})
+  );
+  assert(err instanceof AnthropicApiError);
 });

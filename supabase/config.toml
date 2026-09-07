@@ -447,6 +447,9 @@ import_map = "../deno.json"
 [functions.chat-messages-list]
 verify_jwt = false
 import_map = "../deno.json"
+[functions.chat-messages-send]
+verify_jwt = false
+import_map = "../deno.json"
 
 [analytics]
 enabled = true
