@@ -31,3 +31,25 @@ export async function fetchServerRevision(db: DbClient, userId: string): Promise
   }
   return data.server_revision as number;
 }
+
+/**
+ * Persona atual do perfil (Fase 4, T-045) — "persona congelada no início
+ * da conversa" (Contexto Geral §5): lida uma vez, na criação da sessão de
+ * chat, e gravada em `chat_sessions.persona_snapshot`; trocar a persona
+ * do perfil depois não afeta conversas já existentes (mantém a impressão
+ * digital do cache estável mesmo se o usuário trocar de persona).
+ */
+export async function fetchPersona(
+  db: DbClient,
+  userId: string,
+): Promise<"analitico" | "empatico" | "socratico"> {
+  const { data, error } = await db
+    .from("profiles")
+    .select("persona")
+    .eq("id", userId)
+    .single();
+  if (error || !data) {
+    throwError("NOT_FOUND", "perfil do usuário autenticado não encontrado");
+  }
+  return data.persona as "analitico" | "empatico" | "socratico";
+}

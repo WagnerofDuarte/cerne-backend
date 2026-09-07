@@ -438,6 +438,15 @@ import_map = "../deno.json"
 [functions.media-ocr]
 verify_jwt = false
 import_map = "../deno.json"
+[functions.chat-sessions-create]
+verify_jwt = false
+import_map = "../deno.json"
+[functions.chat-sessions-list]
+verify_jwt = false
+import_map = "../deno.json"
+[functions.chat-messages-list]
+verify_jwt = false
+import_map = "../deno.json"
 
 [analytics]
 enabled = true
