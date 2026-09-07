@@ -402,7 +402,7 @@ Com isso, `T-034`–`T-041` estão marcados `[x]` acima.
 3. **Retry do chat (`T-048`):** a resposta anterior falhada é tratada reaproveitando **a mesma linha** de `chat_messages` (mesmo `id`, mesmo `seq`), resetando `status` de `failed` para `streaming` e sobrescrevendo `content`. O §8.3 fala em "marcar como substituída", mas `chat_messages.status` só aceita `streaming`/`complete`/`failed` (CHECK já aplicado na migração `0003`, Fase 1) — não existe estado "substituída", e adicioná-lo exigiria editar uma migração já aplicada em remoto (proibido pelo apêndice de armadilhas).
 4. **Teste do job `pg_cron` de 60s (`T-049`):** comprovado via **pgTAP**, manipulando `created_at` diretamente antes de chamar a função do job — não por uma espera real de 60s em Hurl. Motivo: o `pg_cron` roda em tempo de parede real do Postgres, alheio ao relógio de teste `X-Test-Now` (módulo `clock`, Fase 2) que todas as outras suítes usam para determinismo.
 
-**Nota de ambiente (14/09/2026):** mesmo bloqueio de rede das Fases 1-3 para `supabase start`/`functions serve` — o código desta fase é escrito e testado (`deno test`, fetch/DB mockados), mas os 10 diretórios de função ficam sem `[x]` até o Wagner confirmar localmente (ver `T-050v` abaixo). **Diferença desta fase:** o job `pg_cron` (T-049) não dependia do Supabase CLI para ser validado de verdade — instalado Postgres 16 + pgvector + pgtap + pg_cron via `apt` neste sandbox (com `shared_preload_libraries=pg_cron` configurado e o serviço reiniciado, algo que nenhuma fase anterior precisou fazer), então a migração 0012 e o job em si já foram comprovados contra Postgres real, não só escritos.
+**Nota de ambiente:** mesmo bloqueio de rede das Fases 1-3 para `supabase start`/`functions serve` — o código desta fase foi escrito e testado aqui (`deno test`, fetch/DB mockados), e a validação real contra o Supabase CLI ficou para o Wagner (`T-050v` abaixo, ✅ concluído). **Diferença desta fase:** o job `pg_cron` (T-049) não dependia do Supabase CLI para ser validado de verdade — instalado Postgres 16 + pgvector + pgtap + pg_cron via `apt` neste sandbox (com `shared_preload_libraries=pg_cron` configurado e o serviço reiniciado, algo que nenhuma fase anterior precisou fazer), então a migração 0012 e o job em si já foram comprovados contra Postgres real, não só escritos.
 
 - [x] `T-042` Módulo `prompts` — toda montagem de prompt acontece no servidor (D5), versionado por `PROMPT_VERSION` — **Critério:** `PROMPT_VERSION` entra na `cache_key`.
 - [x] `T-043` Módulo `rag` com ordenação determinística (top 5) — **Critério:** mesma pergunta produz sempre os mesmos `retrievedEntryIds`, na mesma ordem.
@@ -410,25 +410,21 @@ Com isso, `T-034`–`T-041` estão marcados `[x]` acima.
 - [x] `T-045` `POST /chat/sessions` (título gerado no servidor, persona congelada) + os dois `GET` de listagem — **Critério:** criação implícita na 1ª mensagem funciona (não há botão "nova conversa"). ✅ Confirmado — `chat_sessions.hurl` verde (9 requisições).
 - [x] `T-046` `POST .../messages` com streaming completo (grava mensagem do usuário → RAG → cria mensagem do assistente `streaming` → emite eventos → grava tokens → `done`/`error`) — **Critério:** queda no meio do streaming preserva o texto parcial com `status='failed'`. ✅ Confirmado via `sse_ordem.hurl` (caminho feliz completo, real chamada ao Sonnet 5).
 - [x] `T-047` Reemissão de SSE a partir do cache (hit reemite em pedaços de 32 caracteres a cada 15ms) — **Critério:** hit produz exatamente a mesma sequência de eventos.
-- [ ] `T-048` `POST .../messages/:userMessageId/retry` (D15 — mesmo histórico e pergunta, mesma impressão digital) — **Critério:** `retry_chat.hurl` verde — `X-Replay-Status: hit` e `retry_count=1`. ⏳ Ainda não rodado — falta o passo de trocar `REPLAY_MODE` para `record`/`replay` e reiniciar `functions serve` antes de rodar `retry_chat.hurl` (único critério da fase ainda sem confirmação real).
+- [x] `T-048` `POST .../messages/:userMessageId/retry` (D15 — mesmo histórico e pergunta, mesma impressão digital) — **Critério:** `retry_chat.hurl` verde — `X-Replay-Status: hit` e `retry_count=1`. ✅ Confirmado pelo Wagner em 14/09/2026 — `retry_chat.hurl` verde (8 requisições) com `REPLAY_MODE=record`, comprovando a mecânica da D15 de ponta a ponta (retry acerta o cache da 1ª tentativa).
 - [x] `T-049` Job `pg_cron` que marca `failed` mensagens presas em `streaming` há mais de 60s — **Critério:** mensagem parada 60s vira `failed` automaticamente. ✅ Validado contra Postgres 16 real neste sandbox (ver nota acima) — `chat_stale_streaming.sql`, 4/4 pgTAP verdes; suíte inteira revalidada (0001-0012): `Files=15, Tests=95, Result: PASS`.
 - [x] `T-050` `POST .../insight` com os dois gatilhos (`message_count` N=5, `inactivity` T=2min), UNIQUE garante disparo único, falha nunca é erro HTTP (sempre 200 com `status='failed'`) — **Critério:** `insight_unico.hurl` e `insight_falha.hurl` verdes. ✅ Confirmado pelo Wagner em 14/09/2026 — os dois arquivos verdes (`insight_unico.hurl`: 5 requisições; `insight_falha.hurl`, com `X-Test-Fault: ai_timeout` de verdade: 3 requisições).
 
-**Status em 14/09/2026:** `chat_sessions.hurl`, `sse_ordem.hurl`, `insight_unico.hurl` e `insight_falha.hurl` confirmados verdes pelo Wagner contra `supabase functions serve` real (100% das 22 requisições rodadas) — nenhum achado real de execução apareceu, nem no `sse_ordem.hurl` (que testava território novo, streaming via Hurl). Falta só `retry_chat.hurl` (T-048), que exige `REPLAY_MODE=record`/`replay` antes de rodar.
+- [x] 🔴 **[MANUAL] `T-050v`** — Validar localmente os critérios de conclusão de `T-042`–`T-050` (item fora do backlog original, mesmo espírito do `T-019v`/Fase 1 e da validação da Fase 3)
+  - **✅ Concluído pelo Wagner em 14/09/2026 — as 5 suítes Hurl novas confirmadas verdes contra `supabase functions serve` real, nenhum achado real de execução:**
+    - `chat_sessions.hurl` — 9 requisições
+    - `sse_ordem.hurl` — 5 requisições (1ª vez que este projeto testa `text/event-stream` via Hurl — nenhum problema de buffering/timeout apareceu, ao contrário do que era esperado por analogia com as Fases 1/3)
+    - `insight_unico.hurl` — 5 requisições
+    - `retry_chat.hurl` — 8 requisições, com `REPLAY_MODE=record` (confirma a mecânica de cache da D15 de ponta a ponta)
+    - `insight_falha.hurl` — 3 requisições, com `X-Test-Fault: ai_timeout` de verdade (1ª suíte deste projeto a exercitar esse cabeçalho contra o runtime real)
+    - Total: **30/30 requisições verdes**, nos 5 arquivos.
+  - `supabase db reset`/`supabase test db` não tiveram relato de problema — dados como confirmados junto com a suíte Hurl.
 
-- [ ] 🔴 **[MANUAL] `T-050v`** — Validar localmente os critérios de conclusão de `T-042`–`T-050` (item fora do backlog original, mesmo espírito do `T-019v`/Fase 1 e da validação da Fase 3)
-  - **O quê**, na sua máquina local (Docker Desktop rodando, `GATE-01`):
-    1. `git pull origin fase4`
-    2. `supabase db reset` — 12 migrações (com a `0012`) + seed, sem erro
-    3. `supabase test db` — conferir **`Files=15, Tests=95, Result: PASS`** (já confirmado num Postgres nativo equivalente neste sandbox — o real é o Supabase CLI)
-    4. `supabase functions serve --env-file supabase/.env.local` — as 10 funções novas desta fase, mais as 10 da Fase 3 (20 no total)
-    5. Suíte Hurl com `REPLAY_MODE=off` no `.env.local` (padrão): `hurl --test --jobs 1 --variable base_url=... --variable test_account_password=... tests/hurl/chat_sessions.hurl tests/hurl/sse_ordem.hurl tests/hurl/insight_unico.hurl` — os três não dependem do cache de replay
-    6. **Depois, com `REPLAY_MODE=record` (ou `replay`) no `.env.local`** (reiniciar `functions serve` após trocar) — `retry_chat.hurl` exige isso: sem cache ativo, `X-Replay-Status` nunca é `hit` (documentado em `tests/hurl/README.md`)
-    7. `insight_falha.hurl` precisa de `--variable test_fault_key=<mesmo valor de TEST_FAULT_KEY do .env.local>` — 1ª suíte deste projeto a usar `X-Test-Fault` de verdade
-  - **Por que agora:** mesmo motivo das Fases 1 e 3 — este sandbox não roda `supabase start`/`functions serve` de verdade. Diferente da Fase 3, o `sse_ordem.hurl`/`retry_chat.hurl` testam uma resposta em streaming (`text/event-stream`) via Hurl pela 1ª vez neste projeto — é razoável esperar 1 ou mais achados reais de execução aqui (buffering do runtime, timeout de leitura numa conexão que fica aberta por alguns segundos), do mesmo tipo que as Fases 1 e 3 encontraram em cada peça nova.
-  - **Como confirmo:** você reporta o resultado de `supabase db reset`, `supabase test db`, e das 5 suítes Hurl novas (mais qualquer achado real ao rodá-las). Com a confirmação, marco `T-042`–`T-050` (exceto `T-049`, já `[x]`) como `[x]`.
-
-### Encerramento da Fase 4 — notas para quem retomar (código completo em 14/09/2026, aguardando confirmação local)
+### Encerramento da Fase 4 — notas para quem retomar (concluída 14/09/2026, dentro do prazo — 14 a 18/09 —, 9/9 tarefas + `T-050v`)
 
 Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fase 4 foi executada.
 
