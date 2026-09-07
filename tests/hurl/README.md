@@ -86,10 +86,23 @@ clientes (`ANTHROPIC_REQUEST_TIMEOUT_MS`/`VOYAGE_REQUEST_TIMEOUT_MS`) —
 uma chamada presa agora falha em 30s com um erro normal (`AI_GENERATION_
 TIMEOUT` no OCR; cai no fallback `status: 'failed'` já existente no
 embedding de `POST /entries`, D8) em vez de segurar o isolate até ele ser
-morto de fora. Se a trava ainda acontecer depois disso, o próximo suspeito
-é egress de rede do container Docker local até `api.anthropic.com`/
-`api.voyageai.com` (fora do que dá pra testar neste sandbox — sem acesso a
-Docker/rede real).
+morto de fora.
+
+**Segunda atualização — a trava voltou de novo, agora na 1ª sub-requisição
+do arquivo (a que testa "sem token" → 401), que nem chama a Anthropic:**
+causa raiz diferente e mais fundamental, achada no `gateway.ts` (T-031),
+não nos clientes de IA. Bug documentado do próprio Deno
+([denoland/deno#10182](https://github.com/denoland/deno/issues/10182)):
+devolver uma `Response` sem nunca ler o corpo da requisição trava a
+conexão no `Deno.serve`/edge-runtime quando o payload é grande. O
+`gateway.ts` autentica (passo 5) **antes** de validar o corpo com Zod
+(passo 6) — então "sem token" lança `AUTH_EXPIRED` sem nunca tocar no
+corpo, e a imagem real de ~2.2MB fica sem ser lida nem descartada.
+Corrigido com um `finally` em `runGateway` que drena (`req.arrayBuffer()`)
+qualquer corpo ainda não consumido antes de responder — cobre todo
+caminho que rejeita antes do passo 6, não só este. Teste de regressão em
+`gateway.test.ts` (`req.bodyUsed` vira `true` mesmo numa rejeição por
+`AUTH_EXPIRED`).
 
 ```bash
 {
