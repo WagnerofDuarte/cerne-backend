@@ -453,6 +453,9 @@ import_map = "../deno.json"
 [functions.chat-messages-retry]
 verify_jwt = false
 import_map = "../deno.json"
+[functions.chat-insight-create]
+verify_jwt = false
+import_map = "../deno.json"
 
 [analytics]
 enabled = true

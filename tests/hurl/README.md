@@ -54,8 +54,15 @@ cada chave).
 hurl --test --jobs 1 \
   --variable base_url=http://127.0.0.1:54321/functions/v1 \
   --variable test_account_password='Cerne-Teste-2026!' \
+  --variable test_fault_key='<mesmo valor de TEST_FAULT_KEY no .env.local>' \
   tests/hurl/*.hurl
 ```
+
+`test_fault_key` só é usado por `insight_falha.hurl` (1ª suíte deste
+projeto a injetar falha via `X-Test-Fault` — Seção 10.1) — sem ele (ou
+com um valor errado), o cabeçalho é "ignorado em silêncio" por design
+(§10.1) e a chamada acaba indo para a Anthropic de verdade em vez de
+simular `ai_timeout`.
 
 **`--jobs 1` não é opcional quando se roda mais de um arquivo de uma vez**
 — achado real, 07/09/2026: o `hurl --test` roda os arquivos em paralelo

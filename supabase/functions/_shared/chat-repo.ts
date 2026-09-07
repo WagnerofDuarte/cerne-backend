@@ -250,3 +250,92 @@ export async function findMessageById(
   if (error) throw error;
   return data as ChatMessageRow | null;
 }
+
+// --- Insights (T-050, RF08) -------------------------------------------
+
+export type InsightTriggerType = "message_count" | "inactivity";
+export type InsightStatus = "generating" | "ready" | "failed" | "dismissed";
+
+export interface InsightRow {
+  readonly id: string;
+  readonly session_id: string;
+  readonly user_id: string;
+  readonly trigger_type: InsightTriggerType;
+  readonly trigger_key: string;
+  readonly status: InsightStatus;
+  readonly content: string | null;
+  readonly error_code: string | null;
+  readonly dismissed_at: string | null;
+  readonly created_at: string;
+}
+
+const INSIGHT_COLUMNS =
+  "id, session_id, user_id, trigger_type, trigger_key, status, content, error_code, dismissed_at, created_at";
+
+/** Mesmo SQLSTATE de violação de UNIQUE usado em `entries-repo.ts` (idempotência do RF10). */
+const UNIQUE_VIOLATION = "23505";
+
+export interface InsertInsightResult {
+  readonly insight: InsightRow;
+  readonly alreadyExisted: boolean;
+}
+
+/**
+ * "Tentar inserir; conflito na UNIQUE → retornar o insight existente"
+ * (§8.3) — a UNIQUE `(session_id, trigger_type, trigger_key)` (migração
+ * 0006) é quem garante o disparo único do RF08, pelo banco, não pelo
+ * código (mesmo espírito de D4/RF10). `alreadyExisted=true` significa
+ * "não gerar de novo" — o handler devolve a linha como está, seja qual
+ * for o status atual (`generating`/`ready`/`failed`/`dismissed`).
+ */
+export async function insertInsightIfNotExists(
+  db: DbClient,
+  args: { sessionId: string; userId: string; triggerType: InsightTriggerType; triggerKey: string },
+): Promise<InsertInsightResult> {
+  const { data, error } = await db
+    .from("insights")
+    .insert({
+      session_id: args.sessionId,
+      user_id: args.userId,
+      trigger_type: args.triggerType,
+      trigger_key: args.triggerKey,
+      status: "generating",
+    })
+    .select(INSIGHT_COLUMNS)
+    .single();
+
+  if (error) {
+    if (error.code === UNIQUE_VIOLATION) {
+      const { data: existing, error: findError } = await db
+        .from("insights")
+        .select(INSIGHT_COLUMNS)
+        .eq("session_id", args.sessionId)
+        .eq("trigger_type", args.triggerType)
+        .eq("trigger_key", args.triggerKey)
+        .single();
+      if (findError) throw findError;
+      return { insight: existing as InsightRow, alreadyExisted: true };
+    }
+    throw error;
+  }
+
+  return { insight: data as InsightRow, alreadyExisted: false };
+}
+
+export async function updateInsightResult(
+  db: DbClient,
+  args: { insightId: string; status: InsightStatus; content?: string; errorCode?: string },
+): Promise<InsightRow> {
+  const patch: Record<string, unknown> = { status: args.status };
+  if (args.content !== undefined) patch.content = args.content;
+  if (args.errorCode !== undefined) patch.error_code = args.errorCode;
+
+  const { data, error } = await db
+    .from("insights")
+    .update(patch)
+    .eq("id", args.insightId)
+    .select(INSIGHT_COLUMNS)
+    .single();
+  if (error) throw error;
+  return data as InsightRow;
+}

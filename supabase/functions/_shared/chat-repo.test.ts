@@ -7,12 +7,14 @@ import {
   findChatSessionById,
   findMessageById,
   findMessageBySeq,
+  insertInsightIfNotExists,
   insertMessage,
   listChatMessages,
   listChatSessions,
   nextSeq,
   setSessionTitleIfEmpty,
   touchSessionUpdatedAt,
+  updateInsightResult,
   updateMessage,
 } from "./chat-repo.ts";
 
@@ -204,4 +206,117 @@ Deno.test("findMessageBySeq: devolve null quando não encontra", async () => {
 Deno.test("findMessageById: devolve a linha quando encontra", async () => {
   const { db } = fakeDb({ data: MESSAGE_ROW, error: null });
   assertEquals(await findMessageById(db, { sessionId: "s1", messageId: "m1" }), MESSAGE_ROW);
+});
+
+// --- Insights (T-050) --------------------------------------------------
+
+const INSIGHT_ROW = {
+  id: "i1",
+  session_id: "s1",
+  user_id: "u1",
+  trigger_type: "message_count" as const,
+  trigger_key: "1",
+  status: "generating" as const,
+  content: null,
+  error_code: null,
+  dismissed_at: null,
+  created_at: "2026-09-14T00:00:00Z",
+};
+
+/** Mock dedicado (não o `makeBuilder` genérico) — a checagem de UNIQUE
+ * precisa de resultados DIFERENTES para o insert e para o select de
+ * refetch, o que o builder de resultado único não permite. */
+function fakeInsightDb(
+  opts: {
+    insertResult: { data: unknown; error: unknown };
+    selectResult?: { data: unknown; error: unknown };
+  },
+): DbClient {
+  return {
+    from: (_table: string) => ({
+      insert: (_payload: unknown) => ({
+        select: (_cols: string) => ({ single: () => Promise.resolve(opts.insertResult) }),
+      }),
+      select: (_cols: string) => ({
+        eq: () => ({
+          eq: () => ({
+            eq: () => ({ single: () => Promise.resolve(opts.selectResult!) }),
+          }),
+        }),
+      }),
+      update: (payload: Record<string, unknown>) => ({
+        eq: () => ({
+          select: () => ({
+            single: () => Promise.resolve({ data: { ...INSIGHT_ROW, ...payload }, error: null }),
+          }),
+        }),
+      }),
+    }),
+  } as unknown as DbClient;
+}
+
+Deno.test("insertInsightIfNotExists: sem conflito -> insere e devolve alreadyExisted=false", async () => {
+  const db = fakeInsightDb({ insertResult: { data: INSIGHT_ROW, error: null } });
+  const result = await insertInsightIfNotExists(db, {
+    sessionId: "s1",
+    userId: "u1",
+    triggerType: "message_count",
+    triggerKey: "1",
+  });
+  assertEquals(result.alreadyExisted, false);
+  assertEquals(result.insight, INSIGHT_ROW);
+});
+
+Deno.test("insertInsightIfNotExists: conflito na UNIQUE -> refaz select e devolve alreadyExisted=true", async () => {
+  const existing = { ...INSIGHT_ROW, status: "ready" as const, content: "já gerado antes" };
+  const db = fakeInsightDb({
+    insertResult: { data: null, error: { code: "23505" } },
+    selectResult: { data: existing, error: null },
+  });
+  const result = await insertInsightIfNotExists(db, {
+    sessionId: "s1",
+    userId: "u1",
+    triggerType: "message_count",
+    triggerKey: "1",
+  });
+  assertEquals(result.alreadyExisted, true);
+  assertEquals(result.insight, existing);
+});
+
+Deno.test("insertInsightIfNotExists: erro que não é UNIQUE propaga", async () => {
+  const db = fakeInsightDb({ insertResult: { data: null, error: { code: "42501" } } });
+  let threw = false;
+  try {
+    await insertInsightIfNotExists(db, {
+      sessionId: "s1",
+      userId: "u1",
+      triggerType: "inactivity",
+      triggerKey: "m1",
+    });
+  } catch {
+    threw = true;
+  }
+  assert(threw, "erro que não é 23505 deveria propagar");
+});
+
+Deno.test("updateInsightResult: status='ready' com content", async () => {
+  const db = fakeInsightDb({ insertResult: { data: null, error: null } });
+  const updated = await updateInsightResult(db, {
+    insightId: "i1",
+    status: "ready",
+    content: "texto",
+  });
+  assertEquals(updated.status, "ready");
+  assertEquals(updated.content, "texto");
+});
+
+Deno.test("updateInsightResult: status='failed' com errorCode", async () => {
+  const db = fakeInsightDb({ insertResult: { data: null, error: null } });
+  const updated = await updateInsightResult(db, {
+    insightId: "i1",
+    status: "failed",
+    errorCode: "AI_GENERATION_TIMEOUT",
+  });
+  assertEquals(updated.status, "failed");
+  assertEquals(updated.error_code, "AI_GENERATION_TIMEOUT");
 });
