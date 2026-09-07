@@ -66,19 +66,26 @@ begin
 end $$;
 select is(current_setting('cerne.tmp_sqlstate'), '42501', 'exports: escrita cruzada bloqueada pela política');
 
--- 5) dono consegue apagar o próprio objeto.
-do $$
-begin
-  execute 'set role authenticated';
-  perform set_config('request.jwt.claim.sub', '99999999-0000-0000-0000-000000000001', true);
-  delete from storage.objects
-    where bucket_id = 'exports' and name = '99999999-0000-0000-0000-000000000001/job-1/raw.json';
-  execute 'reset role';
-end $$;
-select is(
-  (select count(*)::int from storage.objects where bucket_id = 'exports'),
-  0,
-  'exports: dono consegue apagar o próprio objeto'
+-- 5) política de DELETE existe e é restrita ao dono — NÃO exercitada via
+-- DELETE direto por SQL: achado real rodando contra o Supabase local de
+-- verdade (Wagner, T-059v) — `storage.objects` tem um trigger próprio do
+-- Supabase (`storage.protect_delete()`) que barra QUALQUER delete direto
+-- por SQL, mesmo do dono, mesmo sem RLS no caminho ("Direct deletion from
+-- storage tables is not allowed. Use the Storage API instead." — proteção
+-- contra perda acidental de objeto órfão, existe para todo mundo, não é
+-- específico deste projeto). A aplicação real (`account-delete/handler.ts`)
+-- já usa a Storage API (`storage.from('exports').remove(...)`), nunca SQL
+-- direto — então isso nunca foi um problema pro código, só para este teste,
+-- que tentava um atalho que o próprio Supabase não permite. Prova possível
+-- por pgTAP: a política existe, é `FOR DELETE`, e está restrita a `authenticated`.
+select ok(
+  exists(
+    select 1 from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+      and policyname = 'exports_delete_own' and cmd = 'DELETE'
+      and roles = array['authenticated']::name[]
+  ),
+  'exports: política de DELETE existe, é FOR DELETE e restrita a authenticated'
 );
 
 -- 6) anon sem leitura (sem GRANT de tabela — mesma postura do resto do projeto).
