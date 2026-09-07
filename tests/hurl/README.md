@@ -104,6 +104,14 @@ caminho que rejeita antes do passo 6, não só este. Teste de regressão em
 `gateway.test.ts` (`req.bodyUsed` vira `true` mesmo numa rejeição por
 `AUTH_EXPIRED`).
 
+**Confirmado pelo Wagner (07/09/2026), rodando de verdade contra o Docker
+local:** `media_ocr.hurl` passa os 6 requests em ~9s depois desse fix. Uma
+mensagem isolada de `early termination has been triggered` continuou
+aparecendo no log entre requisições (isolate reciclado por estar ocioso,
+sem trabalho pendente) — inofensiva quando não vem acompanhada de uma
+requisição pendurada; era exatamente essa combinação (log + travamento)
+que apontava pro bug real acima, não a mensagem em si.
+
 ```bash
 {
   printf 'image_base64='; base64 < fixtures/media/ocr_fixture_01.png | tr -d '\n'; echo
