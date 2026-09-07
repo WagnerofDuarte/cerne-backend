@@ -399,6 +399,24 @@ Deno.test("handler que devolve { stream } produz Response text/event-stream com 
   assert(body.includes("event: done"));
 });
 
+Deno.test("handler que devolve { location } produz 302 com Location e o mesmo X-Request-Id (T-055)", async () => {
+  const req = new Request("https://example.test/test/echo", {
+    method: "POST",
+    headers: { Authorization: "Bearer token-valido", "X-Request-Id": "req-redirect-1" },
+    body: JSON.stringify({ text: "oi" }),
+  });
+  const res = await runGateway(
+    req,
+    echoContract,
+    {},
+    () => Promise.resolve({ location: "https://storage.example.test/signed-url" }),
+    baseDeps(),
+  );
+  assertEquals(res.status, 302);
+  assertEquals(res.headers.get("Location"), "https://storage.example.test/signed-url");
+  assertEquals(res.headers.get("X-Request-Id"), "req-redirect-1");
+});
+
 Deno.test("sem X-Test-Key correto, X-Test-Fault é ignorado e a requisição segue normal", async () => {
   const req = new Request("https://example.test/test/echo", {
     method: "POST",

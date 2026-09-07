@@ -75,6 +75,12 @@ function formatRetrievedEntries(entries: readonly RetrievedEntry[]): string {
   return entries.map((e, i) => `[${i + 1}] (id ${e.id}) ${e.content}`).join("\n");
 }
 
+/** Mesmo formato de `formatRetrievedEntries` — as duas operações de narrativa (export RF05, dashboard RF09) recebem uma lista de registros, não um histórico de chat. */
+function formatEntriesForNarrative(entries: readonly RetrievedEntry[]): string {
+  if (entries.length === 0) return "Nenhum registro no período.";
+  return entries.map((e, i) => `[${i + 1}] (id ${e.id}) ${e.content}`).join("\n");
+}
+
 interface PromptTemplate {
   chatSystem(args: { persona: Persona; retrievedEntries: readonly RetrievedEntry[] }): string;
   insightSystem(
@@ -82,6 +88,10 @@ interface PromptTemplate {
   ): string;
   /** Mensagem final sintética para fechar o histórico do insight num turno `user` — sem ela, uma conversa que termina em `assistant` não pede geração nova de forma confiável. */
   insightClosingInstruction(): string;
+  /** Narrativa da exportação (RF05, T-054) — sem persona (`replay.ts`: `personaSnapshot: null` para a operação `narrative`), é um resumo objetivo, não uma fala em personagem. */
+  exportNarrativeSystem(): string;
+  /** Narrativa do dashboard (RF09, T-057) — mesma natureza sem persona (`replay.ts`, operação `dashboard`). */
+  dashboardNarrativeSystem(): string;
 }
 
 const V1_TEMPLATE: PromptTemplate = {
@@ -108,6 +118,22 @@ const V1_TEMPLATE: PromptTemplate = {
   },
   insightClosingInstruction() {
     return "Gere o insight agora, com base na conversa acima.";
+  },
+  exportNarrativeSystem() {
+    return [
+      "Você é o assistente de diário do Cerne. Escreva um resumo narrativo breve",
+      "(3 a 6 frases) dos registros do usuário no período abaixo, em tom neutro e",
+      "acolhedor, falando diretamente com o usuário, em português.",
+      "Baseie-se só no que está listado — não invente registros que não apareceram.",
+    ].join("\n");
+  },
+  dashboardNarrativeSystem() {
+    return [
+      "Você é o assistente de diário do Cerne. Escreva um balanço narrativo breve",
+      "(3 a 6 frases) da evolução do usuário no período abaixo, em tom neutro e",
+      "acolhedor, falando diretamente com o usuário, em português.",
+      "Baseie-se só no que está listado — não invente registros que não apareceram.",
+    ].join("\n");
   },
 };
 
@@ -150,4 +176,27 @@ export function buildInsightPrompt(args: InsightPromptArgs): AssembledPrompt {
     { role: "user", content: template.insightClosingInstruction() },
   ];
   return { system, messages };
+}
+
+export interface NarrativePromptArgs {
+  readonly promptVersion: string;
+  readonly entries: readonly RetrievedEntry[];
+}
+
+/** Monta o prompt da narrativa de exportação (T-054, RF05). Sem persona (ver `PromptTemplate.exportNarrativeSystem`). */
+export function buildExportNarrativePrompt(args: NarrativePromptArgs): AssembledPrompt {
+  const template = templateFor(args.promptVersion);
+  return {
+    system: template.exportNarrativeSystem(),
+    messages: [{ role: "user", content: formatEntriesForNarrative(args.entries) }],
+  };
+}
+
+/** Monta o prompt da narrativa do dashboard (T-057, RF09). Sem persona (ver `PromptTemplate.dashboardNarrativeSystem`). */
+export function buildDashboardNarrativePrompt(args: NarrativePromptArgs): AssembledPrompt {
+  const template = templateFor(args.promptVersion);
+  return {
+    system: template.dashboardNarrativeSystem(),
+    messages: [{ role: "user", content: formatEntriesForNarrative(args.entries) }],
+  };
 }

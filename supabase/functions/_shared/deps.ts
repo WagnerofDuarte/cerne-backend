@@ -119,6 +119,35 @@ export function readOcrEnv(): OcrEnv {
   };
 }
 
+// --- Ambiente do worker de exportação (T-054) --------------------------
+//
+// Único consumidor de `SUPABASE_SERVICE_ROLE_KEY` neste projeto (regra
+// nº5 — "só em workers de fila") e único que NÃO passa por `readAppEnv`/
+// `buildGatewayDeps`: `export-worker` não é um dos 23 endpoints do
+// `registry.ts`, não roda atrás de `runGateway` (sem X-Test-Fault/
+// X-Test-Now/Zod — ver `export-worker/index.ts`), então não precisa de
+// `GatewayDeps`. Precisa, sim, do restante do aparato de IA/replay
+// (`ANTHROPIC_API_KEY`, `PROMPT_VERSION`, `REPLAY_MODE`) para a narrativa
+// (T-054) usar o mesmo cache de replay que todo o resto do projeto.
+export interface WorkerEnv {
+  readonly supabaseUrl: string;
+  readonly supabaseServiceRoleKey: string;
+  readonly anthropicApiKey: string;
+  readonly promptVersion: string;
+  readonly replayMode: ReplayMode;
+  readonly fetchImpl?: typeof fetch;
+}
+
+export function readWorkerEnv(): WorkerEnv {
+  return {
+    supabaseUrl: requireEnv("SUPABASE_URL"),
+    supabaseServiceRoleKey: requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    anthropicApiKey: requireEnv("ANTHROPIC_API_KEY"),
+    promptVersion: requireEnv("PROMPT_VERSION"),
+    replayMode: parseReplayMode(Deno.env.get("REPLAY_MODE")),
+  };
+}
+
 /**
  * Monta as `ReplayDeps` (T-030) a partir de um cliente de banco já
  * escolhido pelo chamador — os endpoints de IA sempre exigem sessão

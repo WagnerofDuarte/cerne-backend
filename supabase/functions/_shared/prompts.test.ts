@@ -3,7 +3,12 @@
 
 import { assert, assertEquals, assertThrowsSync } from "./_test_utils.ts";
 import { buildChatEnvelope, computeCacheKey } from "./replay.ts";
-import { buildChatPrompt, buildInsightPrompt } from "./prompts.ts";
+import {
+  buildChatPrompt,
+  buildDashboardNarrativePrompt,
+  buildExportNarrativePrompt,
+  buildInsightPrompt,
+} from "./prompts.ts";
 
 Deno.test("buildChatPrompt: system inclui a voz da persona e os registros recuperados", () => {
   const prompt = buildChatPrompt({
@@ -110,4 +115,40 @@ Deno.test("PROMPT_VERSION entra na cache_key: mesma conversa, versões diferente
     await buildChatEnvelope({ ...base, promptVersion: "v1" }),
   );
   assertEquals(keyV1, keyV1Again, "mesmo PROMPT_VERSION e mesmo input -> mesma cache_key");
+});
+
+// --- T-054/T-057: narrativa de exportação e de dashboard -------------------
+
+Deno.test("buildExportNarrativePrompt: system pede resumo, mensagem lista as entradas", () => {
+  const prompt = buildExportNarrativePrompt({
+    promptVersion: "v1",
+    entries: [{ id: "e1", content: "fui ao parque" }, { id: "e2", content: "dormi cedo" }],
+  });
+  assert(prompt.system.includes("resumo narrativo"));
+  assert(prompt.messages.length === 1 && prompt.messages[0]?.role === "user");
+  assert((prompt.messages[0]?.content as string).includes("(id e1) fui ao parque"));
+  assert((prompt.messages[0]?.content as string).includes("(id e2) dormi cedo"));
+});
+
+Deno.test("buildExportNarrativePrompt: sem entradas, mensagem diz explicitamente que não há registros", () => {
+  const prompt = buildExportNarrativePrompt({ promptVersion: "v1", entries: [] });
+  assertEquals(prompt.messages[0]?.content, "Nenhum registro no período.");
+});
+
+Deno.test("buildDashboardNarrativePrompt: system pede balanço, mensagem lista as entradas", () => {
+  const prompt = buildDashboardNarrativePrompt({
+    promptVersion: "v1",
+    entries: [{ id: "e1", content: "semana puxada" }],
+  });
+  assert(prompt.system.includes("balanço narrativo"));
+  assert((prompt.messages[0]?.content as string).includes("(id e1) semana puxada"));
+});
+
+Deno.test("narrativa: nenhum dos dois templates menciona persona (replay.ts: personaSnapshot null)", () => {
+  const exportPrompt = buildExportNarrativePrompt({ promptVersion: "v1", entries: [] });
+  const dashboardPrompt = buildDashboardNarrativePrompt({ promptVersion: "v1", entries: [] });
+  for (const voice of ["acolhedora e empática", "analítica e estruturada", "perguntas abertas"]) {
+    assert(!exportPrompt.system.includes(voice));
+    assert(!dashboardPrompt.system.includes(voice));
+  }
 });

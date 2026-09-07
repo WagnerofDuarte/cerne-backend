@@ -61,14 +61,31 @@ export interface StreamHandlerResult {
   readonly headers?: HeadersInit;
 }
 
+/**
+ * 302 para uma URL assinada (T-055, `GET /export/:jobId/download`) — o
+ * único dos 23 endpoints com `contract.response.kind === "redirect"`
+ * (registrado desde T-026). Sem corpo JSON: a `Response` é só o status e o
+ * header `Location`.
+ */
+export interface RedirectHandlerResult {
+  readonly location: string;
+  readonly headers?: HeadersInit;
+}
+
 export type GatewayHandler<TBody = unknown, TQuery = unknown> = (
   ctx: GatewayContext<TBody, TQuery>,
-) => Promise<HandlerResult | StreamHandlerResult>;
+) => Promise<HandlerResult | StreamHandlerResult | RedirectHandlerResult>;
 
 function isStreamResult(
-  result: HandlerResult | StreamHandlerResult,
+  result: HandlerResult | StreamHandlerResult | RedirectHandlerResult,
 ): result is StreamHandlerResult {
   return "stream" in result;
+}
+
+function isRedirectResult(
+  result: HandlerResult | StreamHandlerResult | RedirectHandlerResult,
+): result is RedirectHandlerResult {
+  return "location" in result;
 }
 
 export interface GatewayDeps {
@@ -152,14 +169,20 @@ export async function runGateway<TBody = unknown, TQuery = unknown>(
     };
     const result = await handler(ctx);
 
-    // 8) Serializar. Duas formas possíveis: envelope JSON (a maioria dos
-    // 23 endpoints) ou stream SSE (`chat.messages.send`/`.retry`, D12) —
-    // a segunda nunca passa por `dataResponse`, o corpo já é o
-    // `ReadableStream` que o handler/T-044 montou.
+    // 8) Serializar. Três formas possíveis: envelope JSON (a maioria dos
+    // 23 endpoints), stream SSE (`chat.messages.send`/`.retry`, D12) ou
+    // redirect 302 (`export.download.get`, T-055) — nenhuma das duas
+    // últimas passa por `dataResponse`.
     if (isStreamResult(result)) {
       const headers = sseHeaders(result.headers);
       headers.set("X-Request-Id", requestId);
       return new Response(result.stream, { status: 200, headers });
+    }
+    if (isRedirectResult(result)) {
+      const headers = new Headers(result.headers);
+      headers.set("Location", result.location);
+      headers.set("X-Request-Id", requestId);
+      return new Response(null, { status: 302, headers });
     }
     const headers = new Headers(result.headers);
     headers.set("X-Request-Id", requestId);
