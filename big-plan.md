@@ -395,6 +395,13 @@ Com isso, `T-034`–`T-041` estão marcados `[x]` acima.
 ## Fase 4 — Chat
 **Prazo: 14/09 a 18/09/2026**
 
+**Quatro lacunas do documento-fonte, confirmadas com o Wagner em 07/09/2026 antes de começar `T-042`** (nenhuma delas resolvida pelo plano técnico nem pelo `Contexto Geral.md` — levantadas explicitamente em vez de preenchidas por conta própria, regra nº4):
+
+1. **RAG × PII (`T-043`):** a busca semântica que alimenta o contexto do chat **inclui** entradas com `pii_status='flagged'` — mesmo comportamento já existente em `entries_search_by_embedding` (T-040, Fase 3, não filtra por PII), coerente com D3 (conteúdo original íntegro, nunca censurado).
+2. **Título da sessão (`T-045`):** gerado por **truncamento determinístico** da 1ª mensagem do usuário, sem chamar IA. Motivo, além da preferência do Wagner: não existe operação `title` no enum de `ReplayOperation` (`chat`/`insight`/`pii`/`ocr`/`embedding`/`narrative`/`dashboard`, `replay.ts`) nem na tabela da Seção 9.2 — uma geração via IA exigiria uma 8ª operação de cache não prevista em nenhum documento-fonte.
+3. **Retry do chat (`T-048`):** a resposta anterior falhada é tratada reaproveitando **a mesma linha** de `chat_messages` (mesmo `id`, mesmo `seq`), resetando `status` de `failed` para `streaming` e sobrescrevendo `content`. O §8.3 fala em "marcar como substituída", mas `chat_messages.status` só aceita `streaming`/`complete`/`failed` (CHECK já aplicado na migração `0003`, Fase 1) — não existe estado "substituída", e adicioná-lo exigiria editar uma migração já aplicada em remoto (proibido pelo apêndice de armadilhas).
+4. **Teste do job `pg_cron` de 60s (`T-049`):** comprovado via **pgTAP**, manipulando `created_at` diretamente antes de chamar a função do job — não por uma espera real de 60s em Hurl. Motivo: o `pg_cron` roda em tempo de parede real do Postgres, alheio ao relógio de teste `X-Test-Now` (módulo `clock`, Fase 2) que todas as outras suítes usam para determinismo.
+
 - [ ] `T-042` Módulo `prompts` — toda montagem de prompt acontece no servidor (D5), versionado por `PROMPT_VERSION` — **Critério:** `PROMPT_VERSION` entra na `cache_key`.
 - [ ] `T-043` Módulo `rag` com ordenação determinística (top 5) — **Critério:** mesma pergunta produz sempre os mesmos `retrievedEntryIds`, na mesma ordem.
 - [ ] `T-044` Módulo `sse` no formato fixo da D12 (`message_created` → `context` → `token*` → `done`/`error`) — **Critério:** `sse_ordem.hurl` verde.
