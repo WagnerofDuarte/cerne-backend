@@ -80,8 +80,8 @@ export interface AnthropicResponse {
 export class AnthropicApiError extends Error {
   readonly status: number;
   readonly body: unknown;
-  constructor(status: number, body: unknown) {
-    super(`Anthropic API respondeu ${status}`);
+  constructor(status: number, body: unknown, message?: string) {
+    super(message ?? `Anthropic API respondeu ${status}`);
     this.name = "AnthropicApiError";
     this.status = status;
     this.body = body;
@@ -160,4 +160,135 @@ export function callAnthropic(
   deps: AnthropicEnv & { replay: ReplayDeps },
 ): Promise<ReplayResult<AnthropicResponse>> {
   return withReplay(envelope, () => callAnthropicRaw(request, deps), deps.replay);
+}
+
+// --- Streaming (T-046, Fase 4) ---------------------------------------------
+//
+// `callAnthropic` (acima) espera o JSON completo — suficiente para PII
+// (T-036) e OCR (T-041), que só precisam do resultado final de uma
+// chamada com tool use. O chat (`POST .../messages`, §8.3 passo 6-7)
+// precisa emitir eventos `token` conforme o Sonnet 5 gera, então não pode
+// esperar a resposta inteira: `streamAnthropic` chama a Messages API com
+// `stream: true` e entrega cada pedaço de texto via `onDelta` assim que
+// chega, devolvendo o texto completo (para gravar no cache, §9.4) só no
+// final.
+//
+// Deliberadamente FORA de `withReplay`/`callAnthropic`: quem orquestra o
+// cache aqui é o próprio handler de chat (`chat-messages-send/generation.ts`),
+// não este cliente — o motivo é que o header `X-Replay-Status` precisa
+// ser decidido *antes* dos bytes da `Response` SSE começarem a sair (a
+// própria decisão de fazer streaming real vs. reemissão fatiada do cache,
+// T-047, depende de saber hit/miss primeiro), o que o formato "espera
+// tudo, devolve status no final" de `withReplay` não permite.
+
+export interface AnthropicStreamResult {
+  readonly text: string;
+  readonly stopReason: string | null;
+}
+
+/** Chamado a cada pedaço de texto novo (`content_block_delta`) conforme chega da Anthropic. */
+export type OnTextDelta = (text: string) => void;
+
+interface SseFrame {
+  readonly event: string;
+  // deno-lint-ignore no-explicit-any
+  readonly data: any;
+}
+
+/** Um frame SSE cru (`event: <tipo>\ndata: <json>`) da própria Anthropic — não confundir com o formato de `sse.ts` (T-044), que é o que ESTE servidor emite para o app, um nível acima. */
+function parseAnthropicSseFrame(frame: string): SseFrame | null {
+  let event = "message";
+  const dataLines: string[] = [];
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice("event:".length).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice("data:".length).trim());
+  }
+  if (dataLines.length === 0) return null;
+  try {
+    return { event, data: JSON.parse(dataLines.join("\n")) };
+  } catch {
+    return null;
+  }
+}
+
+async function callAnthropicStreamRaw(
+  request: AnthropicRequest,
+  env: AnthropicEnv,
+  onDelta: OnTextDelta,
+): Promise<AnthropicStreamResult> {
+  const fetchFn = env.fetchImpl ?? fetch;
+  const res = await fetchFn(ANTHROPIC_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": env.anthropicApiKey,
+      "anthropic-version": ANTHROPIC_VERSION,
+    },
+    body: JSON.stringify({
+      model: request.model,
+      system: request.system,
+      messages: request.messages,
+      max_tokens: request.maxTokens,
+      tools: request.tools,
+      tool_choice: request.toolChoice,
+      stream: true,
+    }),
+    signal: AbortSignal.timeout(ANTHROPIC_REQUEST_TIMEOUT_MS),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new AnthropicApiError(res.status, body);
+  }
+  if (!res.body) {
+    throw new AnthropicApiError(res.status, null, "resposta em streaming sem corpo");
+  }
+
+  let fullText = "";
+  let stopReason: string | null = null;
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // Frames SSE são separados por uma linha em branco (`\n\n`) — processa
+    // todos os frames completos já recebidos, mantém o resto no buffer.
+    let boundary: number;
+    while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const parsed = parseAnthropicSseFrame(frame);
+      if (!parsed) continue;
+
+      if (parsed.event === "content_block_delta") {
+        const text = parsed.data?.delta?.text;
+        if (typeof text === "string" && text.length > 0) {
+          fullText += text;
+          onDelta(text);
+        }
+      } else if (parsed.event === "message_delta") {
+        const reason = parsed.data?.delta?.stop_reason;
+        if (typeof reason === "string") stopReason = reason;
+      }
+    }
+  }
+
+  return { text: fullText, stopReason };
+}
+
+/**
+ * Streaming real do Sonnet 5/Haiku 4.5 — nunca atrás do cache de replay
+ * (ver nota acima). `onDelta` é chamado de forma síncrona, na ordem em
+ * que os pedaços de texto chegam da Anthropic.
+ */
+export function streamAnthropic(
+  request: AnthropicRequest,
+  env: AnthropicEnv,
+  onDelta: OnTextDelta,
+): Promise<AnthropicStreamResult> {
+  return callAnthropicStreamRaw(request, env, onDelta);
 }

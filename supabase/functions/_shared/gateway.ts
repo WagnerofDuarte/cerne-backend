@@ -19,6 +19,7 @@ import { CerneError, throwError } from "./errors.ts";
 import { applyFault, type FaultsDeps, type ParsedFault } from "./faults.ts";
 import { ReplayMissError } from "./replay.ts";
 import { buildErrorEnvelope, type DataEnvelope, dataResponse } from "./serialize.ts";
+import { sseHeaders } from "./sse.ts";
 
 export interface AuthContext {
   readonly userId: string;
@@ -46,9 +47,29 @@ export interface HandlerResult<T = unknown> {
   readonly headers?: HeadersInit;
 }
 
+/**
+ * Resposta em streaming SSE (D12, T-044) — `chat.messages.send`/`.retry`
+ * (`contract.response.kind === "sse"`, já previsto no registro desde
+ * T-026). Diferente de `HandlerResult`, não há um envelope JSON único a
+ * serializar: o handler já devolve o `ReadableStream` pronto, produzido
+ * por `createSseStream` (T-044) e alimentado de forma assíncrona não
+ * esperada por quem construiu o handler — o corpo da `Response` é esse
+ * stream, os bytes chegam ao cliente conforme `emitter.emit(...)` roda.
+ */
+export interface StreamHandlerResult {
+  readonly stream: ReadableStream<Uint8Array>;
+  readonly headers?: HeadersInit;
+}
+
 export type GatewayHandler<TBody = unknown, TQuery = unknown> = (
   ctx: GatewayContext<TBody, TQuery>,
-) => Promise<HandlerResult>;
+) => Promise<HandlerResult | StreamHandlerResult>;
+
+function isStreamResult(
+  result: HandlerResult | StreamHandlerResult,
+): result is StreamHandlerResult {
+  return "stream" in result;
+}
 
 export interface GatewayDeps {
   readonly testFaultKey: string | undefined;
@@ -131,7 +152,15 @@ export async function runGateway<TBody = unknown, TQuery = unknown>(
     };
     const result = await handler(ctx);
 
-    // 8) Serializar.
+    // 8) Serializar. Duas formas possíveis: envelope JSON (a maioria dos
+    // 23 endpoints) ou stream SSE (`chat.messages.send`/`.retry`, D12) —
+    // a segunda nunca passa por `dataResponse`, o corpo já é o
+    // `ReadableStream` que o handler/T-044 montou.
+    if (isStreamResult(result)) {
+      const headers = sseHeaders(result.headers);
+      headers.set("X-Request-Id", requestId);
+      return new Response(result.stream, { status: 200, headers });
+    }
     const headers = new Headers(result.headers);
     headers.set("X-Request-Id", requestId);
     return dataResponse(result.envelope, result.status, headers);

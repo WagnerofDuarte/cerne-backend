@@ -1,10 +1,23 @@
-# Suíte Hurl — Fase 3 (`T-034`–`T-041`)
+# Suíte Hurl — Fases 3 (`T-034`–`T-041`) e 4 (`T-042`–`T-050`, chat)
 
 Contrato de endpoint (§11.2 do plano técnico): caminho feliz, corpo
 inválido → `VALIDATION_ERROR`, sem token → `AUTH_EXPIRED`, recurso de
 outro usuário → `NOT_FOUND` (nunca `403`, D7). Mais as suítes específicas
 nomeadas no plano: `idempotencia_rf10.hurl`, `tags_embutidas.hurl`,
-`busca_and.hurl`, `busca_semantica.hurl`.
+`busca_and.hurl`, `busca_semantica.hurl` (Fase 3); `chat_sessions.hurl`,
+`sse_ordem.hurl`, `retry_chat.hurl`, `insight_unico.hurl`,
+`insight_falha.hurl` (Fase 4).
+
+**Novidade da Fase 4 — streaming SSE:** `chat-messages-send`/`.retry`
+respondem `text/event-stream`, não JSON. O Hurl não tem um modo dedicado
+de ler evento a evento; `sse_ordem.hurl` deixa a conexão fechar (o
+servidor fecha sozinho após `done`/`error`) e verifica a ORDEM dos
+marcadores no corpo inteiro via `body matches` com uma regex `(?s)`. É a
+1ª vez que este projeto testa uma resposta em streaming via Hurl — se
+isso se provar frágil rodando de verdade (buffering do runtime de Edge
+Functions, timeout de leitura do Hurl em uma conexão que fica aberta por
+alguns segundos), é esperado, e vale documentar aqui o que for encontrado
+(mesmo espírito dos 5 achados reais da Fase 3 abaixo).
 
 ## Convenção de URL — importante
 
@@ -41,8 +54,15 @@ cada chave).
 hurl --test --jobs 1 \
   --variable base_url=http://127.0.0.1:54321/functions/v1 \
   --variable test_account_password='Cerne-Teste-2026!' \
+  --variable test_fault_key='<mesmo valor de TEST_FAULT_KEY no .env.local>' \
   tests/hurl/*.hurl
 ```
+
+`test_fault_key` só é usado por `insight_falha.hurl` (1ª suíte deste
+projeto a injetar falha via `X-Test-Fault` — Seção 10.1) — sem ele (ou
+com um valor errado), o cabeçalho é "ignorado em silêncio" por design
+(§10.1) e a chamada acaba indo para a Anthropic de verdade em vez de
+simular `ai_timeout`.
 
 **`--jobs 1` não é opcional quando se roda mais de um arquivo de uma vez**
 — achado real, 07/09/2026: o `hurl --test` roda os arquivos em paralelo

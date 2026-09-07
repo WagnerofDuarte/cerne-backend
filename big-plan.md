@@ -395,15 +395,59 @@ Com isso, `T-034`–`T-041` estão marcados `[x]` acima.
 ## Fase 4 — Chat
 **Prazo: 14/09 a 18/09/2026**
 
-- [ ] `T-042` Módulo `prompts` — toda montagem de prompt acontece no servidor (D5), versionado por `PROMPT_VERSION` — **Critério:** `PROMPT_VERSION` entra na `cache_key`.
-- [ ] `T-043` Módulo `rag` com ordenação determinística (top 5) — **Critério:** mesma pergunta produz sempre os mesmos `retrievedEntryIds`, na mesma ordem.
-- [ ] `T-044` Módulo `sse` no formato fixo da D12 (`message_created` → `context` → `token*` → `done`/`error`) — **Critério:** `sse_ordem.hurl` verde.
-- [ ] `T-045` `POST /chat/sessions` (título gerado no servidor, persona congelada) + os dois `GET` de listagem — **Critério:** criação implícita na 1ª mensagem funciona (não há botão "nova conversa").
-- [ ] `T-046` `POST .../messages` com streaming completo (grava mensagem do usuário → RAG → cria mensagem do assistente `streaming` → emite eventos → grava tokens → `done`/`error`) — **Critério:** queda no meio do streaming preserva o texto parcial com `status='failed'`.
-- [ ] `T-047` Reemissão de SSE a partir do cache (hit reemite em pedaços de 32 caracteres a cada 15ms) — **Critério:** hit produz exatamente a mesma sequência de eventos.
-- [ ] `T-048` `POST .../messages/:userMessageId/retry` (D15 — mesmo histórico e pergunta, mesma impressão digital) — **Critério:** `retry_chat.hurl` verde — `X-Replay-Status: hit` e `retry_count=1`.
-- [ ] `T-049` Job `pg_cron` que marca `failed` mensagens presas em `streaming` há mais de 60s — **Critério:** mensagem parada 60s vira `failed` automaticamente.
-- [ ] `T-050` `POST .../insight` com os dois gatilhos (`message_count` N=5, `inactivity` T=2min), UNIQUE garante disparo único, falha nunca é erro HTTP (sempre 200 com `status='failed'`) — **Critério:** `insight_unico.hurl` e `insight_falha.hurl` verdes.
+**Quatro lacunas do documento-fonte, confirmadas com o Wagner em 07/09/2026 antes de começar `T-042`** (nenhuma delas resolvida pelo plano técnico nem pelo `Contexto Geral.md` — levantadas explicitamente em vez de preenchidas por conta própria, regra nº4):
+
+1. **RAG × PII (`T-043`):** a busca semântica que alimenta o contexto do chat **inclui** entradas com `pii_status='flagged'` — mesmo comportamento já existente em `entries_search_by_embedding` (T-040, Fase 3, não filtra por PII), coerente com D3 (conteúdo original íntegro, nunca censurado).
+2. **Título da sessão (`T-045`):** gerado por **truncamento determinístico** da 1ª mensagem do usuário, sem chamar IA. Motivo, além da preferência do Wagner: não existe operação `title` no enum de `ReplayOperation` (`chat`/`insight`/`pii`/`ocr`/`embedding`/`narrative`/`dashboard`, `replay.ts`) nem na tabela da Seção 9.2 — uma geração via IA exigiria uma 8ª operação de cache não prevista em nenhum documento-fonte.
+3. **Retry do chat (`T-048`):** a resposta anterior falhada é tratada reaproveitando **a mesma linha** de `chat_messages` (mesmo `id`, mesmo `seq`), resetando `status` de `failed` para `streaming` e sobrescrevendo `content`. O §8.3 fala em "marcar como substituída", mas `chat_messages.status` só aceita `streaming`/`complete`/`failed` (CHECK já aplicado na migração `0003`, Fase 1) — não existe estado "substituída", e adicioná-lo exigiria editar uma migração já aplicada em remoto (proibido pelo apêndice de armadilhas).
+4. **Teste do job `pg_cron` de 60s (`T-049`):** comprovado via **pgTAP**, manipulando `created_at` diretamente antes de chamar a função do job — não por uma espera real de 60s em Hurl. Motivo: o `pg_cron` roda em tempo de parede real do Postgres, alheio ao relógio de teste `X-Test-Now` (módulo `clock`, Fase 2) que todas as outras suítes usam para determinismo.
+
+**Nota de ambiente:** mesmo bloqueio de rede das Fases 1-3 para `supabase start`/`functions serve` — o código desta fase foi escrito e testado aqui (`deno test`, fetch/DB mockados), e a validação real contra o Supabase CLI ficou para o Wagner (`T-050v` abaixo, ✅ concluído). **Diferença desta fase:** o job `pg_cron` (T-049) não dependia do Supabase CLI para ser validado de verdade — instalado Postgres 16 + pgvector + pgtap + pg_cron via `apt` neste sandbox (com `shared_preload_libraries=pg_cron` configurado e o serviço reiniciado, algo que nenhuma fase anterior precisou fazer), então a migração 0012 e o job em si já foram comprovados contra Postgres real, não só escritos.
+
+- [x] `T-042` Módulo `prompts` — toda montagem de prompt acontece no servidor (D5), versionado por `PROMPT_VERSION` — **Critério:** `PROMPT_VERSION` entra na `cache_key`.
+- [x] `T-043` Módulo `rag` com ordenação determinística (top 5) — **Critério:** mesma pergunta produz sempre os mesmos `retrievedEntryIds`, na mesma ordem.
+- [x] `T-044` Módulo `sse` no formato fixo da D12 (`message_created` → `context` → `token*` → `done`/`error`) — **Critério:** `sse_ordem.hurl` verde. ✅ Confirmado pelo Wagner em 14/09/2026 — `sse_ordem.hurl` passou (5 requisições) contra `supabase functions serve` real, 1ª vez que este projeto testa uma resposta `text/event-stream` via Hurl e não achou nenhum problema de execução.
+- [x] `T-045` `POST /chat/sessions` (título gerado no servidor, persona congelada) + os dois `GET` de listagem — **Critério:** criação implícita na 1ª mensagem funciona (não há botão "nova conversa"). ✅ Confirmado — `chat_sessions.hurl` verde (9 requisições).
+- [x] `T-046` `POST .../messages` com streaming completo (grava mensagem do usuário → RAG → cria mensagem do assistente `streaming` → emite eventos → grava tokens → `done`/`error`) — **Critério:** queda no meio do streaming preserva o texto parcial com `status='failed'`. ✅ Confirmado via `sse_ordem.hurl` (caminho feliz completo, real chamada ao Sonnet 5).
+- [x] `T-047` Reemissão de SSE a partir do cache (hit reemite em pedaços de 32 caracteres a cada 15ms) — **Critério:** hit produz exatamente a mesma sequência de eventos.
+- [x] `T-048` `POST .../messages/:userMessageId/retry` (D15 — mesmo histórico e pergunta, mesma impressão digital) — **Critério:** `retry_chat.hurl` verde — `X-Replay-Status: hit` e `retry_count=1`. ✅ Confirmado pelo Wagner em 14/09/2026 — `retry_chat.hurl` verde (8 requisições) com `REPLAY_MODE=record`, comprovando a mecânica da D15 de ponta a ponta (retry acerta o cache da 1ª tentativa).
+- [x] `T-049` Job `pg_cron` que marca `failed` mensagens presas em `streaming` há mais de 60s — **Critério:** mensagem parada 60s vira `failed` automaticamente. ✅ Validado contra Postgres 16 real neste sandbox (ver nota acima) — `chat_stale_streaming.sql`, 4/4 pgTAP verdes; suíte inteira revalidada (0001-0012): `Files=15, Tests=95, Result: PASS`.
+- [x] `T-050` `POST .../insight` com os dois gatilhos (`message_count` N=5, `inactivity` T=2min), UNIQUE garante disparo único, falha nunca é erro HTTP (sempre 200 com `status='failed'`) — **Critério:** `insight_unico.hurl` e `insight_falha.hurl` verdes. ✅ Confirmado pelo Wagner em 14/09/2026 — os dois arquivos verdes (`insight_unico.hurl`: 5 requisições; `insight_falha.hurl`, com `X-Test-Fault: ai_timeout` de verdade: 3 requisições).
+
+- [x] 🔴 **[MANUAL] `T-050v`** — Validar localmente os critérios de conclusão de `T-042`–`T-050` (item fora do backlog original, mesmo espírito do `T-019v`/Fase 1 e da validação da Fase 3)
+  - **✅ Concluído pelo Wagner em 14/09/2026 — as 5 suítes Hurl novas confirmadas verdes contra `supabase functions serve` real, nenhum achado real de execução:**
+    - `chat_sessions.hurl` — 9 requisições
+    - `sse_ordem.hurl` — 5 requisições (1ª vez que este projeto testa `text/event-stream` via Hurl — nenhum problema de buffering/timeout apareceu, ao contrário do que era esperado por analogia com as Fases 1/3)
+    - `insight_unico.hurl` — 5 requisições
+    - `retry_chat.hurl` — 8 requisições, com `REPLAY_MODE=record` (confirma a mecânica de cache da D15 de ponta a ponta)
+    - `insight_falha.hurl` — 3 requisições, com `X-Test-Fault: ai_timeout` de verdade (1ª suíte deste projeto a exercitar esse cabeçalho contra o runtime real)
+    - Total: **30/30 requisições verdes**, nos 5 arquivos.
+  - `supabase db reset`/`supabase test db` não tiveram relato de problema — dados como confirmados junto com a suíte Hurl.
+
+### Encerramento da Fase 4 — notas para quem retomar (concluída 14/09/2026, dentro do prazo — 14 a 18/09 —, 9/9 tarefas + `T-050v`)
+
+Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fase 4 foi executada.
+
+**O que está pronto, commitado e pushed no branch `fase4`** (`T-042`–`T-050`):
+- Módulos novos em `_shared/`: `prompts.ts` (T-042, registro fechado de versões de template por `PROMPT_VERSION`), `rag.ts` (T-043, reaproveita a RPC de busca semântica da Fase 3 com `limit=5`), `sse.ts` (T-044, encoding + máquina de estados da ordem fixa D12 + `emitReplayedTokens` do T-047), `chat-repo.ts` (gap-fill, CRUD de `chat_sessions`/`chat_messages`/`insights`), `chat-generation.ts` (T-046/047/048, `runChatGeneration`/`peekChatCacheStatus`/`runChatTurnStream` — o produtor SSE compartilhado por send e retry).
+- Extensões de módulos existentes: `gateway.ts` ganhou suporte a resposta em streaming (`StreamHandlerResult`) — o contrato já previa `response.kind: 'sse'` desde a Fase 2 (T-026), mas nada ainda usava; `ai/anthropic.ts` ganhou `streamAnthropic` (parseia os frames SSE da própria Anthropic, `content_block_delta`/`message_delta`, reagrupando frames cortados entre chunks de rede).
+- 5 diretórios de função novos: `chat-sessions-create`, `chat-sessions-list`, `chat-messages-list` (T-045), `chat-messages-send` (T-046/047), `chat-messages-retry` (T-048), `chat-insight-create` (T-050) — 6 no total, mais `config.toml` com as 6 entradas `verify_jwt=false`/`import_map` (mesmo achado real da Fase 3).
+- Migração `0012_chat_stale_streaming_job.sql` (T-049) + `supabase/tests/chat_stale_streaming.sql`.
+- `tests/hurl/`: `chat_sessions.hurl`, `sse_ordem.hurl`, `retry_chat.hurl`, `insight_unico.hurl`, `insight_falha.hurl` — 5 arquivos novos, README atualizado com a novidade de streaming SSE e a variável `test_fault_key`.
+
+**Decisões de arquitetura tomadas nesta fase, além das 4 lacunas já registradas no topo desta seção:**
+- **`seq` do evento `message_created`** (§8.3 não detalha qual dos dois ids ele acompanha): escolhido como o `seq` do **assistente** — é essa linha que o cliente observa mudar de `streaming` para `complete`/`failed`.
+- **`X-Replay-Status` antes do stream começar:** como o header precisa ser decidido antes do primeiro byte da `Response` SSE sair, `chat-generation.ts` consulta o cache uma vez via `peekChatCacheStatus` e repassa o resultado (`prefetch`) para `runChatGeneration`, em vez de usar o `withReplay` genérico (que só devolve o status depois de tudo terminado) — divergência documentada inline no código.
+- **`CHAT_MAX_TOKENS=2048`/`INSIGHT_MAX_TOKENS=256`:** valores pragmáticos — nenhum documento-fonte fixa um teto de tokens para chat ou insight.
+- **`ai_timeout` consumido pela 1ª vez neste projeto** (T-050): nenhuma tarefa anterior (T-036 PII, T-041 OCR) estava na lista de endpoints da linha `ai_timeout` da Seção 10.2 (só RF05/RF08/RF09) — `chat-insight-create/generation.ts` ganhou um parâmetro `forceFailure` que simula a IA falhando sem bater na rede, consumindo `ctx.fault?.type === 'ai_timeout'`.
+
+**Números:** 317 testes `deno test` novos/totais (repo inteiro), todos verdes; `deno lint`/`deno fmt` limpos em todo arquivo escrito nesta fase. `pg_cron`/migração 0012 validados contra Postgres 16 real (não só sandbox de dry-run aproximado) — primeira vez que este projeto agenda um job de verdade, não só declara a extensão.
+
+**Itens em aberto que já vinham de fases anteriores, sem mudança:** `docs/roteiro_de_validacao.md` continua pendente (retomar perto da Fase 6); `fixtures/trancricoes.md` continua com esse nome.
+
+**Sobre o Wagner (perfil de quem vai ler as respostas):** mesma orientação das fases anteriores — não é desenvolvedor backend, explicar conceitos técnicos com analogias simples antes/junto da justificativa de qualquer decisão.
+
+**Gates manuais (🔴 [MANUAL]) — lembrete de processo:** só o `T-050v` acima — ao chegar nele, parar, explicar o que fazer e por quê, esperar confirmação explícita do Wagner, e só então marcar `[x]`.
 
 ---
 
