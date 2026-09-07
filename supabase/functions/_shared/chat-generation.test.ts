@@ -1,26 +1,32 @@
-// Teste do módulo `generation` (T-046/T-047).
+// Teste do módulo `chat-generation` (T-046/T-047/T-048).
 // Critérios de conclusão: "hit produz exatamente a mesma sequência de
 // eventos" (T-047) e "queda no meio do streaming preserva o texto
 // parcial com status='failed'" (T-046, verificado aqui a nível do que o
-// módulo expõe via onPartialText — a gravação em si é do handler).
+// módulo expõe via onPartialText/runChatTurnStream).
 
-import { assert, assertEquals, assertThrowsAsync } from "../_shared/_test_utils.ts";
-import { AnthropicApiError } from "../_shared/ai/anthropic.ts";
-import type { CanonicalEnvelope, ReplayDeps } from "../_shared/replay.ts";
-import { ReplayMissError } from "../_shared/replay.ts";
-import type { ChatStreamEvent, SseEmitter } from "../_shared/sse.ts";
+import { assert, assertEquals, assertThrowsAsync } from "./_test_utils.ts";
+import { AnthropicApiError } from "./ai/anthropic.ts";
 import {
   type ChatGenerationCacheResponse,
+  type ChatTurnArgs,
   peekChatCacheStatus,
   runChatGeneration,
-} from "./generation.ts";
+  runChatTurnStream,
+} from "./chat-generation.ts";
+import type { DbClient } from "./db.ts";
+import type { CanonicalEnvelope, ReplayDeps } from "./replay.ts";
+import { ReplayMissError } from "./replay.ts";
+import type { ChatStreamEvent, SseEmitter } from "./sse.ts";
 
-function collectingEmitter(): { emitter: SseEmitter; tokens: string[] } {
+function collectingEmitter(): { emitter: SseEmitter; tokens: string[]; events: ChatStreamEvent[] } {
   const tokens: string[] = [];
+  const events: ChatStreamEvent[] = [];
   return {
     tokens,
+    events,
     emitter: {
       emit: (event: ChatStreamEvent) => {
+        events.push(event);
         if (event.type === "token") tokens.push(event.text);
       },
       close: () => {},
@@ -204,7 +210,7 @@ Deno.test("onPartialText é chamado com o texto acumulado a cada delta (base par
   assertEquals(partials, ["ab", "abcd", "abcdef"]);
 });
 
-Deno.test("falha da Anthropic no meio do streaming propaga o erro (handler decide o evento SSE e o status='failed')", async () => {
+Deno.test("falha da Anthropic no meio do streaming propaga o erro (o produtor decide o evento SSE e o status='failed')", async () => {
   const { emitter } = collectingEmitter();
   const { replay } = fakeReplay({ mode: "replay" });
   const fetchImpl = fakeStreamFetch([], { status: 529 });
@@ -316,4 +322,114 @@ Deno.test("prefetch: runChatGeneration reaproveita o resultado sem consultar o c
   assertEquals(lookupCalls, 1, "não deveria consultar o cache de novo — já tinha o prefetch");
   assertEquals(result.status, "hit");
   assertEquals(tokens.join(""), "prefetchado");
+});
+
+// --- runChatTurnStream (produtor compartilhado send/retry) ---------------
+
+const USER_ID = "00000000-0000-0000-0000-000000000001";
+const ASSISTANT_ID = "00000000-0000-0000-0000-000000000002";
+
+function fakeDbForTurn(): { db: DbClient; updates: Record<string, unknown>[] } {
+  const updates: Record<string, unknown>[] = [];
+  const db = {
+    from: () => ({
+      update: (payload: Record<string, unknown>) => {
+        updates.push(payload);
+        return {
+          eq: () => ({
+            select: () => ({
+              single: () => Promise.resolve({ data: { id: ASSISTANT_ID }, error: null }),
+            }),
+          }),
+        };
+      },
+    }),
+    // deno-lint-ignore no-explicit-any
+  } as any;
+  return { db, updates };
+}
+
+function baseTurnArgs(overrides: Partial<ChatTurnArgs> = {}): ChatTurnArgs {
+  const { emitter } = collectingEmitter();
+  const { replay } = fakeReplay({ mode: "replay" });
+  const { db } = fakeDbForTurn();
+  return {
+    db,
+    emitter,
+    userMessageId: USER_ID,
+    assistantMessageId: ASSISTANT_ID,
+    seq: 2,
+    retrievedEntryIds: [],
+    envelope: ENVELOPE,
+    prompt: PROMPT,
+    replayMode: "replay",
+    replay,
+    anthropicApiKey: "chave",
+    prefetch: { cacheKey: "k1", hit: null },
+    ...overrides,
+  };
+}
+
+async function waitForClose(emitterEvents: ChatStreamEvent[], maxTicks = 50): Promise<void> {
+  for (let i = 0; i < maxTicks; i++) {
+    if (emitterEvents.some((e) => e.type === "done" || e.type === "error")) return;
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+}
+
+Deno.test("runChatTurnStream: caminho feliz emite message_created -> context -> token -> done, grava complete", async () => {
+  const collector = collectingEmitter();
+  const { db, updates } = fakeDbForTurn();
+  const fetchImpl = fakeStreamFetch(["ok"]);
+
+  runChatTurnStream(
+    baseTurnArgs({ emitter: collector.emitter, db, fetchImpl, retrievedEntryIds: ["e1"] }),
+  );
+  await waitForClose(collector.events);
+
+  assertEquals(collector.events.map((e) => e.type), [
+    "message_created",
+    "context",
+    "token",
+    "done",
+  ]);
+  assertEquals(updates.length, 1);
+  assertEquals(updates[0], { content: "ok", status: "complete" });
+});
+
+Deno.test("runChatTurnStream: falha no meio -> evento error + status='failed' + texto parcial preservado", async () => {
+  const collector = collectingEmitter();
+  const { db, updates } = fakeDbForTurn();
+  const fetchImpl = fakeStreamFetch([], { status: 529 });
+
+  runChatTurnStream(baseTurnArgs({ emitter: collector.emitter, db, fetchImpl }));
+  await waitForClose(collector.events);
+
+  assertEquals(collector.events.map((e) => e.type), ["message_created", "context", "error"]);
+  const errorEvent = collector.events.find((e) => e.type === "error");
+  assertEquals((errorEvent as { code: string })?.code, "AI_GENERATION_TIMEOUT");
+  assertEquals(updates.length, 1);
+  assertEquals(updates[0], { content: "", status: "failed" });
+});
+
+Deno.test("runChatTurnStream: replay_strict num miss -> evento error com code REPLAY_MISS", async () => {
+  const collector = collectingEmitter();
+  const { db, updates } = fakeDbForTurn();
+  const { replay } = fakeReplay({ mode: "replay_strict" });
+
+  runChatTurnStream(
+    baseTurnArgs({
+      emitter: collector.emitter,
+      db,
+      replay,
+      replayMode: "replay_strict",
+      prefetch: { cacheKey: "k1", hit: null },
+    }),
+  );
+  await waitForClose(collector.events);
+
+  const errorEvent = collector.events.find((e) => e.type === "error");
+  assertEquals((errorEvent as { code: string })?.code, "REPLAY_MISS");
+  assertEquals(updates[0]?.status, "failed");
 });

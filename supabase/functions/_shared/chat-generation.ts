@@ -1,5 +1,12 @@
-// T-046/T-047 — Geração da resposta do assistente (Plano técnico §8.3
-// passos 6-7, §9.3, §9.4).
+// T-046/T-047/T-048 — Geração da resposta do assistente (Plano técnico
+// §8.3 passos 6-7, §9.3, §9.4, D15).
+//
+// Movido para `_shared/` (nasceu em `chat-messages-send/generation.ts`,
+// T-046) porque `chat-messages-retry` (T-048) precisa exatamente da mesma
+// lógica — os passos 4-9 do §8.3 são idênticos nos dois endpoints, só
+// muda como se chega até eles (mensagem nova vs. reabrir uma linha
+// existente, D15). Mesmo raciocínio de todo módulo em `_shared/`: dois
+// endpoints não deveriam reimplementar isso cada um do seu jeito.
 //
 // Dois caminhos, decididos por uma única consulta ao cache (`replay.lookup`,
 // chamada diretamente — não via `withReplay`, ver nota em `ai/anthropic.ts`):
@@ -11,12 +18,11 @@
 //   - miss em `replay_strict`: nunca chama o provedor — lança
 //     `ReplayMissError` (mesma classe de `replay.ts`, §9.3) antes de
 //     emitir qualquer `token`.
-//
-// Isolado de `handler.ts` para ser testável sem montar o pipeline inteiro
-// de gateway/SSE — só precisa de um `SseEmitter` (real ou de teste).
 
-import { ANTHROPIC_MODELS, streamAnthropic } from "../_shared/ai/anthropic.ts";
-import type { AssembledPrompt } from "../_shared/prompts.ts";
+import { ANTHROPIC_MODELS, streamAnthropic } from "./ai/anthropic.ts";
+import { updateMessage } from "./chat-repo.ts";
+import type { DbClient } from "./db.ts";
+import type { AssembledPrompt } from "./prompts.ts";
 import {
   type CanonicalEnvelope,
   computeCacheKey,
@@ -24,8 +30,8 @@ import {
   type ReplayDeps,
   ReplayMissError,
   type ReplayMode,
-} from "../_shared/replay.ts";
-import { emitReplayedTokens, type SseEmitter } from "../_shared/sse.ts";
+} from "./replay.ts";
+import { emitReplayedTokens, type SseEmitter } from "./sse.ts";
 
 export type ReplayStatus = "hit" | "miss" | "off";
 
@@ -96,9 +102,10 @@ export async function runChatGeneration(
     if (args.replayMode === "replay_strict") {
       // "Lança erro REPLAY_MISS e registra" (§9.3) — nunca chama o
       // provedor real neste modo. Quem decide o que fazer com isso (aqui,
-      // virar um evento SSE `error` em vez de uma Response HTTP 500) é o
-      // handler, que já importa `ReplayMissError` de `replay.ts` — a
-      // mesma classe usada pelos endpoints JSON (`gateway.ts`).
+      // virar um evento SSE `error` em vez de uma Response HTTP 500) é
+      // `runChatTurnStream`, que já importa `ReplayMissError` de
+      // `replay.ts` — a mesma classe usada pelos endpoints JSON
+      // (`gateway.ts`).
       throw new ReplayMissError(cacheKey, "chat");
     }
   }
@@ -137,4 +144,106 @@ export async function runChatGeneration(
   }
 
   return { status, text: result.text, finishReason };
+}
+
+// --- Produtor SSE compartilhado (passos 4-9 do §8.3) ------------------
+
+const GENERATION_FAILURE_MESSAGE = "falha ao gerar a resposta do assistente";
+
+export interface ChatTurnArgs {
+  readonly db: DbClient;
+  readonly emitter: SseEmitter;
+  readonly userMessageId: string;
+  readonly assistantMessageId: string;
+  /** `seq` do turno sendo produzido — usado no payload de `message_created` (ver nota em `chat-messages-send/handler.ts`: escolhido como o seq do próprio assistente, a linha que o cliente vai observar mudar). */
+  readonly seq: number;
+  /** Já ordenadas por relevância (T-043), não alfabeticamente. */
+  readonly retrievedEntryIds: readonly string[];
+  readonly envelope: CanonicalEnvelope;
+  readonly prompt: AssembledPrompt;
+  readonly replayMode: ReplayMode;
+  readonly replay: ReplayDeps;
+  readonly anthropicApiKey: string;
+  readonly fetchImpl?: typeof fetch;
+  readonly prefetch: { cacheKey: string; hit: ReplayCacheEntry | null };
+}
+
+/**
+ * Produtor assíncrono compartilhado por `chat-messages-send` (T-046) e
+ * `chat-messages-retry` (T-048) — passos 4-9 do §8.3, idênticos nos dois
+ * endpoints (a única diferença entre eles é como se chega até aqui:
+ * mensagem nova vs. reabrir uma linha existente, D15). Fire-and-forget
+ * deliberado (T-044): quem chama já devolveu a `Response` com `stream`
+ * como corpo; esta função só alimenta `args.emitter`. Nenhuma exceção
+ * daqui pode escapar — sempre vira um evento `error` + `close()`.
+ */
+export function runChatTurnStream(args: ChatTurnArgs): void {
+  (async () => {
+    let partialText = "";
+    try {
+      // Passo 4.
+      args.emitter.emit({
+        type: "message_created",
+        userMessageId: args.userMessageId,
+        assistantMessageId: args.assistantMessageId,
+        seq: args.seq,
+      });
+      // Passo 5.
+      args.emitter.emit({ type: "context", retrievedEntryIds: args.retrievedEntryIds });
+
+      // Passos 6-7.
+      const result = await runChatGeneration({
+        envelope: args.envelope,
+        prompt: args.prompt,
+        replayMode: args.replayMode,
+        replay: args.replay,
+        anthropicApiKey: args.anthropicApiKey,
+        fetchImpl: args.fetchImpl,
+        emitter: args.emitter,
+        prefetch: args.prefetch,
+        onPartialText: (acc) => {
+          partialText = acc;
+        },
+      });
+
+      // Passo 8.
+      await updateMessage(args.db, {
+        messageId: args.assistantMessageId,
+        content: result.text,
+        status: "complete",
+      });
+      args.emitter.emit({
+        type: "done",
+        assistantMessageId: args.assistantMessageId,
+        finishReason: result.finishReason,
+      });
+    } catch (err) {
+      // Passo 9 — preserva o texto parcial já acumulado até a falha
+      // (critério de conclusão do T-046), melhor esforço mesmo que a
+      // própria gravação de falha não consiga completar.
+      await updateMessage(args.db, {
+        messageId: args.assistantMessageId,
+        content: partialText,
+        status: "failed",
+      }).catch(() => {});
+
+      if (err instanceof ReplayMissError) {
+        args.emitter.emit({
+          type: "error",
+          code: "REPLAY_MISS",
+          message: err.message,
+          retryable: false,
+        });
+      } else {
+        args.emitter.emit({
+          type: "error",
+          code: "AI_GENERATION_TIMEOUT",
+          message: GENERATION_FAILURE_MESSAGE,
+          retryable: true,
+        });
+      }
+    } finally {
+      args.emitter.close();
+    }
+  })();
 }
