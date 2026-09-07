@@ -88,21 +88,41 @@ select ok(
   'exports: política de DELETE existe, é FOR DELETE e restrita a authenticated'
 );
 
--- 6) anon sem leitura (sem GRANT de tabela — mesma postura do resto do projeto).
+-- 6) anon sem leitura — achado real rodando contra o Supabase de verdade
+-- (Wagner, T-059v): diferente do resto das tabelas deste projeto (schema
+-- `public`, totalmente nosso), `storage.objects` já vem com GRANT de
+-- leitura para `anon` de fábrica, dado pelo próprio serviço de Storage do
+-- Supabase — o `revoke all ... from anon` da migração 0013 não tem como
+-- garantir que isso desapareça (não é uma tabela que este projeto é dono
+-- desde o início). Confirmado empiricamente que os DOIS resultados
+-- acontecem dependendo do ambiente: no Supabase real, a consulta funciona
+-- e devolve zero linhas (RLS sem política que libere `anon` — mesmo
+-- padrão de "isolamento negativo" dos testes 2/3); num Postgres genérico
+-- onde o REVOKE não é atropelado por nenhum serviço externo, a mesma
+-- consulta dá erro de permissão. Os dois são igualmente seguros (`anon`
+-- não enxerga o objeto de ninguém em nenhum dos dois) — o teste aceita
+-- qualquer um dos dois, em vez de fixar uma suposição sobre qual ambiente
+-- está rodando.
 do $$
 declare
   v_sqlstate text := null;
+  v_count text := null;
 begin
   execute 'set role anon';
   begin
-    perform count(*) from storage.objects where bucket_id = 'exports';
+    select count(*)::text into v_count from storage.objects where bucket_id = 'exports';
   exception when others then
     v_sqlstate := sqlstate;
   end;
   execute 'reset role';
   perform set_config('cerne.tmp_sqlstate', coalesce(v_sqlstate, 'NULL'), false);
+  perform set_config('cerne.tmp_count', coalesce(v_count, 'NULL'), false);
 end $$;
-select is(current_setting('cerne.tmp_sqlstate'), '42501', 'exports: anon sem leitura');
+select ok(
+  current_setting('cerne.tmp_sqlstate') = '42501'
+  or (current_setting('cerne.tmp_sqlstate') = 'NULL' and current_setting('cerne.tmp_count') = '0'),
+  'exports: anon não enxerga nenhum objeto (erro de permissão OU zero linhas, a depender do ambiente — ver comentário acima)'
+);
 
 select * from finish();
 rollback;

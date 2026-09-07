@@ -21,12 +21,16 @@ on conflict (id) do nothing;
 
 -- Mesma convenção paranoica do resto do projeto (D2, migração 0009: "nenhuma
 -- tabela exposta por padrão", `REVOKE ALL ... FROM anon` em toda tabela com
--- dono) — aplicada aqui também, mesmo que o bootstrap do próprio serviço de
--- Storage do Supabase já viesse com grants padrão para `anon`/`authenticated`
--- em `storage.objects`. Sem isto, `anon` seria barrado só pela política (RLS
--- devolveria 0 linhas, não erro) — este projeto prefere negação explícita a
--- depender do comportamento padrão de uma peça de infraestrutura que não é
--- deste repositório.
+-- dono) — tentada aqui também, mas SEM o mesmo efeito: achado real rodando
+-- contra o Supabase de verdade (Wagner, T-059v) — `anon` continua
+-- enxergando a tabela depois deste `REVOKE` (o SELECT de fábrica dado pelo
+-- próprio serviço de Storage não é desfeito por um `REVOKE` deste projeto,
+-- diferente de toda tabela em `public.*`, que é 100% nossa desde a
+-- criação). Mantido mesmo assim como defesa em profundidade (não faz mal),
+-- mas quem garante o isolamento de verdade é a RLS: sem nenhuma política
+-- que libere `anon`, a consulta devolve 0 linhas, nunca erro de permissão
+-- — resultado igualmente seguro, só não é o "erro explícito" que o resto
+-- do projeto consegue garantir em `public.*`.
 revoke all on storage.objects from anon;
 
 -- `storage.foldername(name)` devolve os segmentos de diretório do caminho
