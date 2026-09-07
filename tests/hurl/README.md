@@ -1,4 +1,4 @@
-# Suíte Hurl — Fases 3 (`T-034`–`T-041`) e 4 (`T-042`–`T-050`, chat)
+# Suíte Hurl — Fases 3 (`T-034`–`T-041`), 4 (`T-042`–`T-050`, chat) e 5 (`T-051`–`T-059`, exportação/dashboard/conta)
 
 Contrato de endpoint (§11.2 do plano técnico): caminho feliz, corpo
 inválido → `VALIDATION_ERROR`, sem token → `AUTH_EXPIRED`, recurso de
@@ -18,6 +18,49 @@ isso se provar frágil rodando de verdade (buffering do runtime de Edge
 Functions, timeout de leitura do Hurl em uma conexão que fica aberta por
 alguns segundos), é esperado, e vale documentar aqui o que for encontrado
 (mesmo espírito dos 5 achados reais da Fase 3 abaixo).
+
+## Novidade da Fase 5 — exportação assíncrona
+
+`export_download.hurl` e `export_resiliente.hurl` são os primeiros arquivos
+deste projeto que esperam um **worker assíncrono** terminar (`export-worker`,
+T-054, acordado pelo `pg_cron`/`pg_net` da migração 0014) — usam `[Options]
+retry: 20` / `retry-interval: 3000` no `GET /export-status-get/...` para
+tentar de novo até o job sair de `pending`, em vez de assumir que já está
+pronto na primeira tentativa. Isso é novo para este projeto (todo endpoint
+anterior resolve na própria requisição) — se `retry`/`retry-interval` não
+existirem nessa forma na versão do Hurl instalada, é esperado que precise
+de ajuste; reportar o que for encontrado, mesmo espírito dos achados reais
+das fases anteriores.
+
+**Pré-requisito só destas duas suítes:** o worker só desperta de verdade se
+`experiment.worker_config` tiver uma linha (a fila/consumidor da migração
+0014 lê essa tabela para saber para onde despachar) — rodar uma vez, à
+mão, depois do `supabase db reset`:
+
+```sql
+insert into experiment.worker_config (functions_base_url, service_role_key)
+values ('http://127.0.0.1:54321/functions/v1', '<a SUPABASE_SERVICE_ROLE_KEY do .env.local>');
+```
+
+Sem isso, `export_dispatch_pending_jobs()` roda a cada 15s mas sai em
+silêncio (nenhum erro, nenhum despacho) — os jobs ficam presos em
+`pending` para sempre, e os dois arquivos acima estouram o `retry` e
+falham. Se isso acontecer mesmo com a linha configurada, é sinal de que o
+`pg_net`/`pgmq` reais (Nota de ambiente da migração 0014 — nenhum dos dois
+pôde ser exercitado no sandbox onde este código foi escrito) não estão se
+comportando como o esperado — reportar.
+
+**Achado real de sintaxe, `hurlfmt --check` (versão 6.1.1, a mesma do
+Wagner — baixada neste sandbox só para validar, não versionada):**
+`retry-interval` não aceita um número puro, precisa da unidade explícita
+(`3000ms`, não `3000`) — sem isso `hurlfmt` reformata silenciosamente na
+primeira execução real, o que teria mascarado o erro em vez de apontá-lo
+aqui. Corrigido nos dois arquivos antes de qualquer execução real.
+
+`account_delete.hurl` usa `{{newUuid}}` (função embutida do Hurl, não uma
+variável passada por `--variable`) para gerar um e-mail descartável
+novo a cada execução — nunca uma das 3 contas do seed, cujo apagamento
+quebraria o resto da suíte inteira.
 
 ## Convenção de URL — importante
 
@@ -174,6 +217,7 @@ hurl --test \
 |---|---|---|
 | A (`cenario-cheio`) | `cenario-cheio@cerne.test` | `a0000000-0000-0000-0000-000000000001` |
 | B (`cenario-uma`) | `cenario-uma@cerne.test` | `b0000000-0000-0000-0000-000000000001` |
+| C (`cenario-vazio`) | `cenario-vazio@cerne.test` | `c0000000-0000-0000-0000-000000000001` |
 
 Senha única: `TEST_ACCOUNT_PASSWORD` (`Cerne-Teste-2026!`, documentado em
 `supabase/seed/ancora.md`).
@@ -199,3 +243,22 @@ Rodar contra o stack local de verdade (Docker, `supabase functions serve`)
 Anthropic/Voyage (nenhum cache de replay populado ainda — isso só
 acontece no `T-060`, Fase 6) — custo pequeno, dentro do teto de gasto do
 `GATE-04`/`GATE-05`.
+
+**Fase 5, mesma nota de ambiente** (código escrito e testado neste
+sandbox — `deno test`, tudo mockado; pgTAP das migrações 0013–0018
+validado com Postgres 16 real via `apt`, mas `pgmq`/`pg_net`/`storage.*`
+tiveram que ser simulados por um stub local, nunca a extensão/serviço de
+verdade — ver os comentários nas próprias migrações). Os 11 arquivos novos
+(`export_summary`, `export_vazio`, `export_status`, `export_download`,
+`export_resiliente`, `dashboard_aggregate`, `dashboard_narrative`,
+`dashboard_degradado`, `account_settings`, `email_readonly`,
+`account_delete`) foram validados em sintaxe (`hurlfmt --check`, achado
+real acima) e em semântica/fluxo — captures entre requisições, o
+mecanismo de `retry` esperando o "worker" terminar, `{{newUuid}}` — contra
+um mock HTTP local (Deno, descartado, não versionado, mesmo espírito do
+mock da Fase 3): **11/11 arquivos, 55 requisições, 100%**. Nunca rodaram
+contra o stack real do Supabase nem chamaram Anthropic de verdade nesta
+validação. Ao rodar de verdade, `dashboard_narrative.hurl` (caminho feliz)
+faz uma chamada real à Anthropic; `export_resiliente.hurl` dispara o
+worker mas o `ai_timeout` marcado impede a chamada real de acontecer — só
+o download/status são exercitados de ponta a ponta.
