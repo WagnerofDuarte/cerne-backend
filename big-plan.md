@@ -452,17 +452,88 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 ---
 
 ## Fase 5 — Exportação, Dashboard e Conta
-**Prazo: 19/09 a 20/09/2026** *(pular esta fase inteira se o RF05 foi cortado na Fase 2 — manter apenas dashboard e conta)*
+**Prazo: 19/09 a 20/09/2026** *(pular esta fase inteira se o RF05 foi cortado na Fase 2 — manter apenas dashboard e conta)* — **Não se aplica: a Fase 2 fechou em 04/09/2026, bem antes do prazo (09/09). RF05 mantido no escopo, fase completa (9/9 tarefas).**
 
-- [ ] `T-051` Fila `pgmq` + consumidor `pg_cron` — **Critério:** job muda de estado sozinho, sem intervenção manual.
-- [ ] `T-052` Bucket privado `exports` + política (caminho do objeto começa com o `user_id` do requisitante; nenhum bucket de imagens, D17) — **Critério:** usuário não consegue ler arquivo de outro usuário.
-- [ ] `T-053` `POST /export/summary` (contagem síncrona; zero entradas → `EXPORT_EMPTY_PERIOD` **sem criar job**) — **Critério:** `export_vazio.hurl` verde, zero linhas criadas em `export_jobs`.
-- [ ] `T-054` Worker de exportação com os dois status independentes (dados prontos não espera a narrativa) — **Critério:** `export_resiliente.hurl` verde.
-- [ ] `T-055` `GET /export/:jobId/status` (com `downloadAvailable` já resolvido) e `GET /export/:jobId/download` (302, PDF com fallback para bruto) — **Critério:** download responde 302 mesmo com narrativa falhada.
-- [ ] `T-056` `GET /dashboard/aggregate` (sempre 200, inclusive com zero entradas) — **Critério:** os três cenários (0/1/>30 entradas) respondem 200.
-- [ ] `T-057` `GET /dashboard/narrative` (independente do agregado) — **Critério:** `dashboard_degradado.hurl` verde.
-- [ ] `T-058` `PATCH /account/settings` (nome, persona, biometria; **`email` é rejeitado**) — **Critério:** `email_readonly.hurl` verde.
-- [ ] `T-059` `DELETE /account` (hard delete, cascata, sem órfãos, purga o bucket `exports` do usuário) — **Critério:** `cascade_delete.sql` verde + bucket purgado.
+**Decisão tomada com o Wagner antes de começar `T-059`** (ver conversa da sessão): `DELETE /account` apaga a própria conta via uma função `SECURITY DEFINER` no banco (mesmo padrão do `T-029`/`T-030`, migração 0010) — `auth.uid()` embutido, sem parâmetro solto — em vez de abrir uma exceção pontual para `service_role` na Edge Function (rejeitado, quebraria a regra nº5 sem exceção) ou delegar para o worker de fila (rejeitado, tornaria o apagamento assíncrono, reabrindo o contrato já congelado da Fase 2).
+
+**Nota de ambiente:** mesmo bloqueio de rede das fases anteriores para `supabase start`/`functions serve`. Diferente das fases 1/3/4, porém, esta fase depende de três peças de infraestrutura que **não têm nenhum equivalente instalável via `apt`** neste sandbox — `pgmq`, `pg_net` (extensões só disponíveis na imagem própria do Supabase) e o serviço de Storage (`storage.objects`/`storage.buckets`, gerido pelo Supabase, não pelo Postgres genérico). Para ainda assim validar a lógica SQL de verdade (não só escrita, revisada), montei um harness próprio (não versionado) com **stubs funcionais** dos três — mesmas assinaturas de função, comportamento simplificado — e apliquei as 18 migrações (0001–0018) numa instância Postgres 16 real (`pgvector`/`pgtap`/`pg_cron` via `apt`, como nas Fases 1 e 4), do zero, em sequência: **`Files=20, Tests=126, Result: PASS`** (95 anteriores + 31 novos: 6 de storage, 8 de fila, 6 de dashboard, 5 de apagar conta, 6 do repasse de fault). Isso pega bug real de SQL/permissão — não prova que `pgmq`/`pg_net`/Storage de verdade se comportam como os stubs. Essa prova final é do Wagner, via `T-059v` abaixo.
+
+- [x] `T-051` Fila `pgmq` + consumidor `pg_cron` — **Critério:** job muda de estado sozinho, sem intervenção manual.
+
+  **Lacuna real de arquitetura, encontrada implementando (revisar se parecer errado):** nenhum documento-fonte diz *como* o "consumidor `pg_cron`" roda de fato — `pg_cron` sozinho só executa SQL dentro do próprio Postgres, não tem como chamar a Anthropic nem gravar no Storage (isso exige HTTP de fora do banco). Adotei o padrão já documentado pelo próprio Supabase para "cron job que aciona uma Edge Function": `pg_cron` agenda `export_dispatch_pending_jobs()` a cada 15s, que usa a extensão `pg_net` (chamadas HTTP assíncronas de dentro do Postgres — **extensão nova, não listada em `0001_extensions.sql`**) para acordar a Edge Function `export-worker` (T-054) com `Authorization: Bearer <service_role key>`. A fila em si é `pgmq.create('export_jobs_queue')`; enfileirar (`export_enqueue`) é uma RPC `SECURITY DEFINER` de superfície mínima (mesmo padrão da migração 0010), chamada pela Edge Function de app com o JWT do usuário — nunca `service_role` aí (regra nº5). A URL base das functions e a `service_role key` do próprio ambiente ficam numa tabela singleton nova, `experiment.worker_config` — **precisa de um INSERT manual, uma vez por ambiente** (dev/ciclo-a/ciclo-b), documentado em `tests/hurl/README.md` e obrigatório antes de `export_download.hurl`/`export_resiliente.hurl` funcionarem de verdade.
+
+- [x] `T-052` Bucket privado `exports` + política (caminho do objeto começa com o `user_id` do requisitante; nenhum bucket de imagens, D17) — **Critério:** usuário não consegue ler arquivo de outro usuário.
+
+  Migração `0013`: `insert into storage.buckets` (`on conflict do nothing`, idempotente) + 3 políticas (select/insert/delete, uma por operação — mesma convenção do resto do projeto) usando `storage.foldername(name))[1] = auth.uid()::text`. `revoke all ... from anon` explícito, mesmo o bootstrap do próprio Storage do Supabase possivelmente já vindo com grant padrão — este projeto prefere negação explícita a depender do default de uma peça que não é deste repositório. Convenção de caminho (não detalhada no plano além de "começa com o user_id"): `<user_id>/<job_id>/raw.json` e `<user_id>/<job_id>/summary.pdf`.
+
+- [x] `T-053` `POST /export/summary` (contagem síncrona; zero entradas → `EXPORT_EMPTY_PERIOD` **sem criar job**) — **Critério:** `export_vazio.hurl` verde, zero linhas criadas em `export_jobs`.
+
+  `count` é resolvido uma única vez, na hora, e gravado direto no job (`entry_count`) — o worker não recalcula (corrida "conta muda entre o pedido e o processamento" não é uma garantia pedida por nenhum documento-fonte). `narrative_status` já nasce `skipped` quando `includeNarrative=false` (nunca tentada).
+
+- [x] `T-054` Worker de exportação com os dois status independentes (dados prontos não espera a narrativa) — **Critério:** `export_resiliente.hurl` verde.
+
+  `export-worker` (Edge Function própria, **fora dos 23 endpoints do `registry.ts`**, sem `runGateway` — não é chamada por app algum, só pelo `pg_cron`/`pg_net` do T-051): coleta as entradas (`service_role`, filtra `user_id` explicitamente — o cliente ignora RLS, então a filtragem manual é quem garante o isolamento), grava o bruto (JSON) no Storage, marca `data_ready`, tenta a narrativa (Haiku, atrás do cache de replay — **precisou de um GRANT novo, migração `0016`**, já que as RPCs de cache da migração 0010 só tinham `EXECUTE` para `authenticated`, não `service_role`; editar a 0010 é proibido, então a 0016 só *acrescenta*). Sucesso: gera PDF (módulo `pdf.ts` novo — texto simples, fonte Helvetica embutida, sem dependência nova; **validado de verdade** com PyPDF2 neste sandbox, não só estruturalmente) e marca `done`. Falha: `narrative_status='failed'`, `status` **permanece** `data_ready` — nunca reverte o bruto já disponível.
+
+  **2ª lacuna real encontrada implementando:** `ai_timeout` (Seção 10.2) é citado como aplicável a RF05, e `export_resiliente.hurl` é nomeado explicitamente no `Contexto Geral.md` testando esse caminho — mas a narrativa roda no worker, que nunca vê o `X-Test-Fault` da requisição síncrona original. Solução (migração `0018`, mesmo padrão `SECURITY DEFINER`): `export-summary-create` grava a intenção (`export_mark_fault`) junto do job quando `ctx.fault?.type === 'ai_timeout'`; o worker lê isso (`export_get_fault`, só `service_role`) antes de tentar a narrativa e força a falha sem bater na Anthropic.
+
+- [x] `T-055` `GET /export/:jobId/status` (com `downloadAvailable` já resolvido) e `GET /export/:jobId/download` (302, PDF com fallback para bruto) — **Critério:** download responde 302 mesmo com narrativa falhada.
+
+  `gateway.ts` ganhou um 3º tipo de resultado de handler (`RedirectHandlerResult`, ao lado do JSON e do SSE da Fase 4) — o registro já previa `kind: "redirect"` desde o T-026, mas nada ainda usava. A URL assinada é criada com o cliente do PRÓPRIO usuário (nunca `service_role`) — a política de Storage do T-052 já concede `select` ao dono do caminho, então isso funciona sem elevar privilégio. **Lacuna preenchida pragmaticamente:** nenhum documento-fonte diz o que devolver se o job ainda não chegou a `data_ready`/`done` (diferente de "narrativa falhou", que é coberto) — tratado como `NOT_FOUND` (o arquivo literalmente não existe ainda no Storage), mesma família de resposta de qualquer recurso ausente.
+
+- [x] `T-056` `GET /dashboard/aggregate` (sempre 200, inclusive com zero entradas) — **Critério:** os três cenários (0/1/>30 entradas) respondem 200.
+
+  Mesma descoberta da T-040 (Fase 3): agregação por dia/origem não dá pra fazer via construtor de query fluente do PostgREST — RPC nova (`dashboard_aggregate_counts`, migração 0015, `SECURITY INVOKER`, RLS de `entries` continua valendo, sem `user_id` como parâmetro). Handler monta `buckets`/`totals` a partir das linhas — dias/origens sem entrada simplesmente não aparecem (não preenche "buraco" com zero).
+
+- [x] `T-057` `GET /dashboard/narrative` (independente do agregado) — **Critério:** `dashboard_degradado.hurl` verde.
+
+  Endpoint comum (roda no ciclo requisição/resposta, ao contrário da narrativa de exportação) — mesmo padrão de qualquer outro endpoint de IA (PII, OCR, insight): cliente do usuário, atrás do cache de replay, `ai_timeout` tratado como em `chat-insight-create`/T-050.
+
+- [x] `T-058` `PATCH /account/settings` (nome, persona, biometria; **`email` é rejeitado**) — **Critério:** `email_readonly.hurl` verde.
+
+  `.strict()` do Zod (já escrito na Fase 2, `contracts/zod/account.ts`) resolve a rejeição de `email` sozinho — nenhum código extra no handler precisou checar isso.
+
+- [x] `T-059` `DELETE /account` (hard delete, cascata, sem órfãos, purga o bucket `exports` do usuário) — **Critério:** `cascade_delete.sql` verde + bucket purgado.
+
+  RPC `delete_own_account()` (migração 0017, decisão registrada no topo desta fase) apaga só o `auth.users.id` de quem chamou — a cascata completa (profiles → 7 tabelas) já estava provada desde a Fase 1 (`cascade_delete.sql`); `supabase/tests/account_delete_rpc.sql` (novo) prova a mesma cascata passando pela RPC, não por um `delete` direto. Purga do bucket primeiro (cliente do próprio usuário — a política do T-052 permite), apagamento da conta depois; se a purga falhar, a exclusão da conta segue adiante mesmo assim (trade-off registrado inline no handler: perder dado do usuário pra sempre por causa de um arquivo órfão seria pior que o inverso).
+
+- [x] 🔴 **[MANUAL] `T-059v`** — Validar localmente os critérios de conclusão de `T-051`–`T-059` (item fora do backlog original, mesmo espírito do `T-019v`/`T-050v`)
+  - **O quê**, na sua máquina local (Docker Desktop, `GATE-01`):
+    1. `git pull origin fase5`
+    2. `supabase db reset` — 18 migrações (0001–0018) + seed, sem erro
+    3. `supabase test db` — esperado `Files=20, Tests=126, Result: PASS`
+    4. **Configurar o worker** (só depois do `db reset`, uma vez): `insert into experiment.worker_config (functions_base_url, service_role_key) values ('http://127.0.0.1:54321/functions/v1', '<sua SUPABASE_SERVICE_ROLE_KEY do .env.local>');` — sem isso os jobs de exportação ficam presos em `pending` para sempre
+    5. `supabase functions serve --env-file supabase/.env.local`
+    6. Suíte Hurl completa (`tests/hurl/*.hurl`, `--jobs 1`) — os 11 arquivos novos da Fase 5 somados aos 15 já existentes
+  - **Por que agora:** `pgmq`, `pg_net` e o serviço de Storage não têm como ser exercitados de verdade neste sandbox (nota de ambiente acima) — só o Supabase CLI real prova que o worker desperta, processa a fila e fala com o Storage de verdade.
+  - **Como confirmo:** você reporta o resultado dos passos 2, 3 e 6 (incluindo quantas requisições passaram). Com a confirmação, os itens acima já marcados `[x]` (código) ficam também confirmados por comando.
+
+### Encerramento da Fase 5 — notas para quem retomar (código completo em 07/09/2026, dentro do prazo — 19–20/09 —, aguardando `T-059v`)
+
+Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fase 5 foi executada.
+
+**Onde o código foi escrito vs. onde foi validado de verdade — a fase com a maior lacuna entre as duas, das cinco até aqui:** `pgmq`, `pg_net` e o serviço de Storage do Supabase não têm pacote `apt` nem imagem genérica equivalente — só existem na imagem própria do Supabase. Diferente das Fases 1/4 (onde instalar `pgvector`/`pgtap`/`pg_cron` via `apt` bastou para validar contra Postgres real), aqui montei um harness com **stubs funcionais** dos três (mesmas assinaturas de função que as reais, comportamento simplificado) só para exercitar a lógica SQL própria deste projeto — ownership, RLS, grants, o fluxo dos updates — nunca para provar que `pgmq.send`/`pg_net.http_post`/Storage de verdade se comportam como os stubs. Com isso, apliquei as 18 migrações (0001–0018) do zero, em sequência, contra Postgres 16 real: `Files=20, Tests=126, Result: PASS`. Toda a lógica de negócio (67 testes `deno test` novos, ver números abaixo) roda com Anthropic/Storage/replay/banco mockados por injeção de dependência — nenhuma chamada real foi feita nesta fase.
+
+**O que está pronto, commitado no branch `fase5`** (`T-051`–`T-059`, um commit por tarefa/grupo coerente):
+- 6 migrações novas: `0013_export_storage` (bucket + políticas), `0014_export_queue` (pgmq + pg_net + RPCs de fila), `0015_dashboard_aggregate_rpc`, `0016_export_worker_replay_grants` (só GRANT, não toca a 0010), `0017_account_delete_rpc`, `0018_export_ai_timeout_fault` (repasse do fault pro worker).
+- 5 arquivos pgTAP novos em `supabase/tests/`: `rls_storage_exports.sql`, `export_queue.sql`, `dashboard_aggregate_rpc.sql`, `account_delete_rpc.sql`, `export_fault.sql` (31 casos).
+- 8 diretórios de função novos (`supabase/functions/`): `export-summary-create`, `export-status-get`, `export-download-get`, `export-worker` (o único que não é um dos 23 endpoints — sem `runGateway`, autenticação própria por bearer == `service_role key`), `dashboard-aggregate-get`, `dashboard-narrative-get`, `account-settings-update`, `account-delete`.
+- Módulos novos em `_shared/`: `export-repo.ts`, `dashboard-repo.ts`, `pdf.ts` (gerador de PDF escrito à mão, sem dependência nova — validado com PyPDF2 de verdade, não só estrutura), `worker-db.ts` (o único lugar do projeto que cria cliente `service_role` — nunca importado pelos 23 endpoints de app).
+- Extensões de módulos existentes: `gateway.ts` ganhou `RedirectHandlerResult` (3º tipo de resposta, ao lado de JSON e SSE); `prompts.ts` ganhou os templates de narrativa (export e dashboard, sem persona); `deps.ts` ganhou `readWorkerEnv`.
+- `tests/hurl/`: 11 arquivos novos (`export_summary`, `export_vazio`, `export_status`, `export_download`, `export_resiliente`, `dashboard_aggregate`, `dashboard_narrative`, `dashboard_degradado`, `account_settings`, `email_readonly`, `account_delete`) — sintaxe conferida com `hurlfmt --check` (mesma versão do Wagner, 6.1.1, baixada só pra isso neste sandbox) e semântica validada de ponta a ponta contra um mock HTTP local: **11/11 arquivos, 55 requisições, 100%**.
+
+**Duas decisões de arquitetura reais, tomadas nesta fase e não previstas em nenhum documento-fonte** (além da de `DELETE /account`, já registrada no topo desta seção):
+1. **Como o "consumidor `pg_cron`" desperta uma Edge Function** (T-051) — adição da extensão `pg_net` + a tabela `experiment.worker_config` (URL base + `service_role key`, um INSERT manual por ambiente). Sem isso, "fila + consumidor" não tinha como sair do papel — `pg_cron` sozinho não fala HTTP.
+2. **Repasse de `ai_timeout` pro worker assíncrono** (T-054, migração 0018) — o único dos 6 tipos de fault que precisa atravessar de uma requisição síncrona para um processo que roda depois dela.
+
+**Números:** 67 testes `deno test` novos (384 no total, repo inteiro), todos verdes; `deno lint`/`deno fmt` limpos em todo arquivo escrito nesta fase. 31 casos pgTAP novos (126 no total). 11 arquivos Hurl novos, validados contra mock (nunca contra o stack real).
+
+**Itens em aberto que já vinham de fases anteriores, sem mudança:** `docs/roteiro_de_validacao.md` continua pendente (retomar perto da Fase 6, lembrete de 18/09 — hoje é 07/09, ainda dentro do prazo combinado); `fixtures/trancricoes.md` continua com esse nome.
+
+**Item em aberto novo desta fase:** a suíte Hurl da Fase 5 nunca rodou contra o stack real — diferente de todas as fases anteriores, cujo código chegou a ser confirmado pelo Wagner antes do encerramento. Fica para `T-059v`.
+
+**Sobre o Wagner (perfil de quem vai ler as respostas):** mesma orientação das fases anteriores — não é desenvolvedor backend, explicar conceitos técnicos com analogias simples antes/junto da justificativa de qualquer decisão.
+
+**Gates manuais (🔴 [MANUAL]) — lembrete de processo:** só o `T-059v` acima — ao chegar nele, parar, explicar o que fazer e por quê, esperar confirmação explícita do Wagner, e só então marcar os itens de código como confirmados por comando.
 
 ---
 
