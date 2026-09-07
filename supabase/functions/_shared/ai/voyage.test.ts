@@ -112,6 +112,35 @@ Deno.test("envia input_type/model/output_dimension certos e o header Authorizati
   assertEquals(body.model, VOYAGE_MODEL);
 });
 
+Deno.test("manda um AbortSignal no fetch — sem ele, uma chamada presa nunca falha sozinha (achado real, T-041)", async () => {
+  let capturedInit: RequestInit | undefined;
+  const fetchImpl = ((_url: string | URL | Request, init?: RequestInit) => {
+    capturedInit = init;
+    return Promise.resolve(
+      new Response(JSON.stringify({ data: [{ embedding: SHORT_EMBEDDING }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  }) as typeof fetch;
+
+  const envelope = buildEmbeddingEnvelope({
+    provider: "voyage",
+    model: VOYAGE_MODEL,
+    promptVersion: "v1",
+    text: "x",
+    inputType: "document",
+  });
+  await embed(
+    envelope,
+    { model: VOYAGE_MODEL, text: "x", inputType: "document", outputDimension: 3 },
+    { voyageApiKey: "chave", fetchImpl, replay: OFF_REPLAY },
+  );
+
+  assert(capturedInit?.signal instanceof AbortSignal);
+  assertEquals(capturedInit.signal.aborted, false);
+});
+
 Deno.test("dimensão do embedding devolvido diferente da pedida vira VoyageApiError", async () => {
   const envelope = buildEmbeddingEnvelope({
     provider: "voyage",

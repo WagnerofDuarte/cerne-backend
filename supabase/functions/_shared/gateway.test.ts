@@ -70,6 +70,23 @@ Deno.test("requisição sem token retorna AUTH_EXPIRED (critério de conclusão 
   assertEquals(body.code, "AUTH_EXPIRED");
 });
 
+Deno.test("sem token: drena o corpo não lido antes de responder (achado real, T-041 — Deno.serve trava se a Response volta sem o body consumido)", async () => {
+  const req = new Request("https://example.test/test/echo", {
+    method: "POST",
+    body: JSON.stringify({
+      text: "corpo que nunca chega a ser lido — a autenticação falha antes do passo 6",
+    }),
+  });
+  assertEquals(req.bodyUsed, false);
+  const res = await runGateway(req, echoContract, {}, echoHandler(), baseDeps());
+  assertEquals(res.status, 401);
+  assertEquals(
+    req.bodyUsed,
+    true,
+    "o gateway deveria ter drenado o corpo não lido antes de responder",
+  );
+});
+
 Deno.test("token inválido retorna AUTH_INVALID", async () => {
   const req = new Request("https://example.test/test/echo", {
     method: "POST",

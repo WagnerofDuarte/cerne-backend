@@ -138,6 +138,23 @@ export async function runGateway<TBody = unknown, TQuery = unknown>(
   } catch (err) {
     // 9) Tratar exceção.
     return handleError(err, requestId);
+  } finally {
+    // Achado real (T-041, media_ocr.hurl travando ~150s/504 mesmo com
+    // env/base64 corretos): devolver uma `Response` sem nunca ler o corpo
+    // da requisição trava a conexão no Deno.serve/edge-runtime quando o
+    // payload é grande — bug documentado do Deno (denoland/deno#10182),
+    // não deste projeto. Acontece toda vez que o passo 5 (autenticar)
+    // rejeita ANTES do passo 6 (`parseBody`) rodar — ex.: AUTH_EXPIRED
+    // numa requisição sem token, mas com uma imagem de alguns MB no
+    // corpo (o `media-ocr` só lê `Authorization`, nunca chega a olhar o
+    // body nesse caso). O dreno explícito aqui cobre qualquer caminho que
+    // responda sem ter consumido o corpo — `bodyUsed` já é `true` para
+    // quem passou pelo passo 6 normalmente, então isso nunca lê 2x.
+    if (req.body && !req.bodyUsed) {
+      await req.arrayBuffer().catch(() => {
+        // conexão do cliente pode já ter caído — não muda a resposta que já decidimos devolver
+      });
+    }
   }
 }
 

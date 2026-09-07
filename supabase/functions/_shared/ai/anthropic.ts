@@ -22,9 +22,27 @@ export const ANTHROPIC_MODELS = {
   haiku45: "claude-haiku-4-5-20251001",
 } as const;
 
+/** Bloco de conteúdo multimodal (T-041, OCR via visão) — mesmo formato da Messages API. */
+export interface AnthropicTextContent {
+  readonly type: "text";
+  readonly text: string;
+}
+
+export interface AnthropicImageContent {
+  readonly type: "image";
+  readonly source: {
+    readonly type: "base64";
+    readonly media_type: string;
+    readonly data: string;
+  };
+}
+
+export type AnthropicContentInput = AnthropicTextContent | AnthropicImageContent;
+
 export interface AnthropicMessage {
   readonly role: "user" | "assistant";
-  readonly content: string;
+  /** String para texto puro (chat, PII) — array de blocos para conteúdo multimodal (OCR, T-041). */
+  readonly content: string | readonly AnthropicContentInput[];
 }
 
 export interface AnthropicRequest {
@@ -79,6 +97,24 @@ export interface AnthropicEnv {
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 
+/**
+ * `fetch` não tem timeout próprio — sem um `signal`, uma chamada que trava
+ * na rede (DNS, egress bloqueado, conexão que nunca fecha) nunca falha
+ * sozinha; ela fica pendurada até o teto externo do runtime matar o
+ * isolate inteiro. No `supabase functions serve` local isso aparece nos
+ * logs como "wall clock duration warning" seguido de "early termination
+ * has been triggered" — não um erro do envelope do projeto (§3.2), e sim
+ * o motor de Edge Functions abortando à força. Achado rodando de verdade
+ * (`media_ocr.hurl`, T-041): as sub-requisições que nunca chegam a chamar
+ * a Anthropic (401 sem token, 413 de imagem grande demais) respondem na
+ * hora; só as duas que chegam aqui (imagem ilegível, caminho feliz)
+ * travavam. Com o `signal`, uma chamada presa falha em
+ * `ANTHROPIC_REQUEST_TIMEOUT_MS` com um erro normal — o `catch` de
+ * `performOcr` (media-ocr/ocr.ts) já converte isso em
+ * `AI_GENERATION_TIMEOUT`.
+ */
+export const ANTHROPIC_REQUEST_TIMEOUT_MS = 30_000;
+
 async function callAnthropicRaw(
   request: AnthropicRequest,
   env: AnthropicEnv,
@@ -99,6 +135,7 @@ async function callAnthropicRaw(
       tools: request.tools,
       tool_choice: request.toolChoice,
     }),
+    signal: AbortSignal.timeout(ANTHROPIC_REQUEST_TIMEOUT_MS),
   });
 
   const body = await res.json();
