@@ -38,9 +38,13 @@ das fases anteriores.
 mão, depois do `supabase db reset`:
 
 ```sql
-insert into experiment.worker_config (functions_base_url, service_role_key)
-values ('http://host.docker.internal:54321/functions/v1', '<a SUPABASE_SERVICE_ROLE_KEY do .env.local>');
+insert into experiment.worker_config (functions_base_url, shared_secret)
+values ('http://host.docker.internal:54321/functions/v1', '<o mesmo valor de EXPORT_WORKER_SECRET no .env.local>');
 ```
+
+`EXPORT_WORKER_SECRET` é uma variável nova (migração 0019) — precisa estar
+em `supabase/.env.local` (qualquer string, escolhida por você; só precisa
+ser a MESMA usada nesse INSERT) antes de rodar `supabase functions serve`.
 
 **Achado real (Wagner, T-059v):** `127.0.0.1` aqui **não funciona** —
 `pg_cron`/`pg_net` rodam dentro do container Docker do Postgres, e de lá
@@ -52,11 +56,30 @@ correção: os jobs ficam presos em `pending` para sempre, e nenhuma linha
 "serving the request with supabase/functions/export-worker" aparece no
 log do `functions serve` (o worker nunca chega a ser chamado).
 
+**2º achado real (Wagner, T-059v), mais sutil — coluna renomeada na
+migração 0019:** mesmo com a URL corrigida (`net._http_response` mostrando
+`status_code: 401`, não mais erro de conexão — prova de que a rede
+funcionava), os jobs continuavam presos em `pending`. Causa: a coluna se
+chamava `service_role_key` e a instrução original deste README pedia para
+colar aqui a `SUPABASE_SERVICE_ROLE_KEY` do `.env.local` — mas `supabase
+functions serve --env-file` **recusa carregar qualquer variável cujo nome
+comece com `SUPABASE_`** do arquivo do desenvolvedor (imprime `Env name
+cannot start with SUPABASE_, skipping: SUPABASE_SERVICE_ROLE_KEY` e injeta
+sempre o valor interno da própria stack local no lugar). Ou seja: o valor
+que você colava aqui nunca podia ser igual ao que a função `export-worker`
+via de verdade em tempo de execução — a checagem de autorização
+(`export-worker/index.ts`) rejeitava toda chamada com 401. Corrigido
+trocando essa checagem por um segredo próprio, `EXPORT_WORKER_SECRET`, sem
+o prefixo `SUPABASE_` (a CLI não mexe nele) — coluna renomeada para
+`shared_secret` para não sugerir mais que precisa ser a service_role key
+de verdade.
+
 Sem essa linha configurada (de qualquer jeito, certa ou errada),
 `export_dispatch_pending_jobs()` roda a cada 15s mas sai em
 silêncio (nenhum erro, nenhum despacho) — os jobs ficam presos em
 `pending` para sempre, e os dois arquivos acima estouram o `retry` e
-falham. Se isso acontecer mesmo com a linha configurada, é sinal de que o
+falham. Se isso acontecer mesmo com a linha configurada (URL certa,
+`shared_secret` igual ao `EXPORT_WORKER_SECRET`), é sinal de que o
 `pg_net`/`pgmq` reais (Nota de ambiente da migração 0014 — nenhum dos dois
 pôde ser exercitado no sandbox onde este código foi escrito) não estão se
 comportando como o esperado — reportar.
@@ -102,7 +125,10 @@ descreve, mas causa totalmente diferente (achado real, 04/09/2026).
 `supabase/.env.local` está no `.gitignore` — nunca é versionado; precisa
 de `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `PROMPT_VERSION`, `REPLAY_MODE`
 (ver Seção 3.6 do plano técnico para a lista completa e onde conseguir
-cada chave).
+cada chave), mais `EXPORT_WORKER_SECRET` (Fase 5, T-054 — qualquer string
+seguindo o achado real documentado na seção "Novidade da Fase 5" acima;
+só usado por `export_download.hurl`/`export_resiliente.hurl`, indireta
+via `experiment.worker_config.shared_secret`).
 
 ```bash
 hurl --test --jobs 1 \
