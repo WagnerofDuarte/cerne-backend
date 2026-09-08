@@ -74,14 +74,50 @@ o prefixo `SUPABASE_` (a CLI não mexe nele) — coluna renomeada para
 `shared_secret` para não sugerir mais que precisa ser a service_role key
 de verdade.
 
-Sem essa linha configurada (de qualquer jeito, certa ou errada),
-`export_dispatch_pending_jobs()` roda a cada 15s mas sai em
+**3º achado real (Wagner, T-059v) — bug de código de verdade, corrigido
+(migração 0020):** com a URL e o segredo já certos, o `export-worker`
+finalmente era chamado (a linha "serving the request with
+supabase/functions/export-worker" já aparecia no log) — mas o job
+continuava preso em `pending`, nunca virava `error`. Antes disso não dava
+pra saber o motivo: o `catch` do worker engolia o erro em silêncio (também
+corrigido, ver mais abaixo). Com o log falando, apareceu o motivo real:
+`permission denied for table export_jobs (42501)`. `service_role` tem
+`BYPASSRLS` (ignora RLS), mas isso não dispensa o `GRANT` comum de tabela
+— são dois mecanismos independentes do Postgres, e nenhuma migração
+anterior tinha dado esse `GRANT` porque esta foi a 1ª vez que
+`service_role` tocou uma tabela diretamente neste projeto (todo uso
+anterior era `GRANT EXECUTE` numa RPC `SECURITY DEFINER`, que roda com o
+privilégio do dono da função, não do chamador). Corrigido: `grant select,
+update on public.export_jobs to service_role;` + `grant select on
+public.entries to service_role;`.
+
+**Achado de log, não de comportamento — 3 pontos que engoliam erro em
+silêncio, corrigidos:** até aqui, um bug real de banco virava só "500
+genérico" (`gateway.ts`) ou "job preso em pending" (`export-worker`) sem
+NENHUMA pista no log do `functions serve` — foi assim que este achado (e o
+`PGRST303` logo abaixo) só puderam ser confirmados, depois de adicionar
+`console.error` em `gateway.ts` (`handleError`) e
+`export-worker/{index,worker}.ts`. Nenhuma resposta ao cliente mudou — só
+passou a aparecer no log.
+
+**Achado de ambiente (não é bug de código) — `dashboard_aggregate.hurl`,
+`PGRST303 "JWT issued at future"`:** o PostgREST rejeitou um token recém-
+emitido pelo `auth-login` porque, do ponto de vista dele, foi "emitido no
+futuro" — sintoma clássico de relógio do Docker Desktop dessincronizado do
+relógio do Mac (comum depois que o Mac dorme/acorda com o Docker rodando).
+Nada no código deste projeto define esse timestamp. **Correção:** reiniciar
+o Docker Desktop (fecha e abre de novo) resincroniza o relógio da VM —
+depois disso, repetir a suíte.
+
+Sem `experiment.worker_config` configurado (de qualquer jeito, certa ou
+errada), `export_dispatch_pending_jobs()` roda a cada 15s mas sai em
 silêncio (nenhum erro, nenhum despacho) — os jobs ficam presos em
 `pending` para sempre, e os dois arquivos acima estouram o `retry` e
 falham. Se isso acontecer mesmo com a linha configurada (URL certa,
-`shared_secret` igual ao `EXPORT_WORKER_SECRET`), é sinal de que o
-`pg_net`/`pgmq` reais (Nota de ambiente da migração 0014 — nenhum dos dois
-pôde ser exercitado no sandbox onde este código foi escrito) não estão se
+`shared_secret` igual ao `EXPORT_WORKER_SECRET`, migração 0020 aplicada),
+é sinal de que o `pg_net`/`pgmq` reais (Nota de ambiente da migração 0014
+— nenhum dos dois pôde ser exercitado no sandbox onde este código foi
+escrito) não estão se
 comportando como o esperado — reportar.
 
 **Achado real de sintaxe, `hurlfmt --check` (versão 6.1.1, a mesma do
