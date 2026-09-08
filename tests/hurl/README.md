@@ -39,10 +39,21 @@ mão, depois do `supabase db reset`:
 
 ```sql
 insert into experiment.worker_config (functions_base_url, service_role_key)
-values ('http://127.0.0.1:54321/functions/v1', '<a SUPABASE_SERVICE_ROLE_KEY do .env.local>');
+values ('http://host.docker.internal:54321/functions/v1', '<a SUPABASE_SERVICE_ROLE_KEY do .env.local>');
 ```
 
-Sem isso, `export_dispatch_pending_jobs()` roda a cada 15s mas sai em
+**Achado real (Wagner, T-059v):** `127.0.0.1` aqui **não funciona** —
+`pg_cron`/`pg_net` rodam dentro do container Docker do Postgres, e de lá
+`127.0.0.1` aponta para o próprio container, não para a máquina onde
+`supabase functions serve` está escutando. `host.docker.internal` é o
+apelido que o Docker Desktop (Mac/Windows) usa para um container alcançar
+a própria máquina — funciona sem configuração extra. Sintoma sem essa
+correção: os jobs ficam presos em `pending` para sempre, e nenhuma linha
+"serving the request with supabase/functions/export-worker" aparece no
+log do `functions serve` (o worker nunca chega a ser chamado).
+
+Sem essa linha configurada (de qualquer jeito, certa ou errada),
+`export_dispatch_pending_jobs()` roda a cada 15s mas sai em
 silêncio (nenhum erro, nenhum despacho) — os jobs ficam presos em
 `pending` para sempre, e os dois arquivos acima estouram o `retry` e
 falham. Se isso acontecer mesmo com a linha configurada, é sinal de que o
