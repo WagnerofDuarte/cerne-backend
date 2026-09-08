@@ -114,8 +114,8 @@ select is(
 -- prova isso de ponta a ponta é a suíte Hurl (`export_download.hurl`/
 -- `export_resiliente.hurl` — se o job chega a `done`/`data_ready`, o
 -- despacho funcionou de verdade).
-insert into experiment.worker_config (functions_base_url, service_role_key)
-values ('http://127.0.0.1:54321/functions/v1', 'fake-service-role-key-for-test');
+insert into experiment.worker_config (functions_base_url, shared_secret)
+values ('http://127.0.0.1:54321/functions/v1', 'fake-shared-secret-for-test');
 
 select public.export_dispatch_pending_jobs();
 

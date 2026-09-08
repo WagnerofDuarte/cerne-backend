@@ -2,12 +2,19 @@
 // resto: não é um dos 23 endpoints do `registry.ts`, não passa por
 // `runGateway` (sem X-Test-Fault/X-Test-Now/validação Zod — nada disso se
 // aplica a uma chamada interna do próprio banco) e nunca é chamado por um
-// app cliente. Só o `pg_cron`/`pg_net` da migração 0014 chama isto, com
-// `Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>` — a checagem abaixo
-// (comparar o bearer recebido com a própria `service_role key` do
-// ambiente) é o único "gateway" desta função. `verify_jwt = false`
-// (`config.toml`) pelo mesmo motivo de sempre: quem decide o que aceitar
-// como credencial válida é o próprio código, não o runtime.
+// app cliente. Só o `pg_cron`/`pg_net` da migração 0014/0019 chama isto,
+// com `Authorization: Bearer <EXPORT_WORKER_SECRET>` — a checagem abaixo
+// (comparar o bearer recebido com esse segredo próprio do worker) é o
+// único "gateway" desta função. `verify_jwt = false` (`config.toml`) pelo
+// mesmo motivo de sempre: quem decide o que aceitar como credencial válida
+// é o próprio código, não o runtime.
+//
+// NÃO usa `SUPABASE_SERVICE_ROLE_KEY` para esta checagem — achado real do
+// T-059v, Wagner: `supabase functions serve --env-file` recusa carregar
+// qualquer variável `SUPABASE_*` do `.env.local` do desenvolvedor (usa
+// sempre o valor interno da própria CLI), então essa variável nunca seria
+// igual ao que `experiment.worker_config` envia. Ver comentário em
+// `_shared/deps.ts` (`WorkerEnv.workerSecret`).
 
 import { readWorkerEnv } from "../_shared/deps.ts";
 import { createServiceRoleClient } from "../_shared/worker-db.ts";
@@ -17,7 +24,7 @@ const env = readWorkerEnv();
 
 function isAuthorized(req: Request): boolean {
   const bearer = req.headers.get("Authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
-  return bearer === env.supabaseServiceRoleKey;
+  return bearer === env.workerSecret;
 }
 
 Deno.serve(async (req) => {
