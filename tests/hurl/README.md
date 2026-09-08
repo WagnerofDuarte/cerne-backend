@@ -105,9 +105,22 @@ passou a aparecer no log.
 emitido pelo `auth-login` porque, do ponto de vista dele, foi "emitido no
 futuro" — sintoma clássico de relógio do Docker Desktop dessincronizado do
 relógio do Mac (comum depois que o Mac dorme/acorda com o Docker rodando).
-Nada no código deste projeto define esse timestamp. **Correção:** reiniciar
-o Docker Desktop (fecha e abre de novo) resincroniza o relógio da VM —
-depois disso, repetir a suíte.
+Nada no código deste projeto define esse timestamp.
+
+Simplesmente fechar/reabrir o Docker Desktop **nem sempre** resincroniza a
+VM de verdade (achado real — persistiu mesmo depois disso, num teste com o
+Wagner). Correção mais confiável, direto no relógio da VM:
+
+```bash
+docker run --rm --privileged --pid=host justincormack/nsenter1 date -u $(date -u +%m%d%H%M%Y.%S)
+```
+
+Isso força o relógio de dentro do Docker a bater com o do Mac agora mesmo
+— comando só de leitura de data, não mexe em nenhum container/dado seu.
+Se ainda assim persistir, o próximo passo é mais pesado: `supabase stop`,
+fechar o Docker Desktop de verdade (não só a janela — sair do app pelo
+menu), abrir de novo, `supabase start` (recria os containers do zero,
+inclusive o de autenticação).
 
 Sem `experiment.worker_config` configurado (de qualquer jeito, certa ou
 errada), `export_dispatch_pending_jobs()` roda a cada 15s mas sai em
