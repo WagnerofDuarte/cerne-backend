@@ -379,6 +379,16 @@ function handleError(err: unknown, requestId: string): Response {
   // Última rede de segurança — um bug real do handler não pode vazar
   // detalhe interno na resposta, mas também não pode inventar um dos 13
   // códigos que não se aplica.
+  //
+  // Achado real (T-059v, Wagner): antes deste `console.error`, um 500
+  // aqui não deixava NENHUM rastro — nem na resposta (por design, não
+  // pode vazar detalhe interno) nem no log do `functions serve` (nada
+  // era impresso). Resultado: um bug real de banco/RPC virava um "500
+  // genérico" sem nenhuma pista de qual foi o erro de verdade, mesmo nos
+  // próprios logs do servidor. `console.error` aqui não muda a resposta
+  // ao cliente (continua sem vazar nada) — só passa a aparecer no log do
+  // `functions serve`, correlacionável pelo `requestId` de ambos.
+  console.error(`[${requestId}] erro não tratado:`, err);
   const headers = new Headers({ "Content-Type": "application/json", "X-Request-Id": requestId });
   return new Response(
     JSON.stringify({ code: "INTERNAL_ERROR", message: "erro inesperado no servidor", requestId }),

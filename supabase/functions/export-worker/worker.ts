@@ -117,10 +117,20 @@ export async function processExportJob(jobId: string, deps: ProcessExportJobDeps
       deps,
       nowIso,
     );
-  } catch {
+  } catch (err) {
     // Falha fora do trecho de narrativa (ex.: Storage indisponível no
     // upload do bruto) — marca o job como erro; diferente da narrativa,
     // não há um "meio termo" aqui porque o dado bruto nem chegou a existir.
+    //
+    // Achado real (T-059v, Wagner): antes deste `console.error`, um erro
+    // aqui não deixava NENHUM rastro (nem no `export_jobs` — ver comentário
+    // acima, o catch original não logava — nem no log do `functions
+    // serve`) — só era descoberto indiretamente, pelo `status='error'`
+    // (ou, pior, pelo job ficar preso, se este próprio `.catch(() => {})`
+    // também falhasse). `console.error` não muda o comportamento (o job
+    // ainda vira 'error', o worker ainda não propaga) — só dá visibilidade
+    // de qual foi a falha de verdade.
+    console.error(`export-worker: job ${jobId} falhou fora da narrativa:`, err);
     await updateExportJob(deps.client, jobId, { status: "error", completed_at: nowIso() }).catch(
       () => {},
     );
@@ -196,9 +206,12 @@ async function tryGenerateNarrative(
       pdf_file_path: pdfPath,
       completed_at: nowIso(),
     });
-  } catch {
+  } catch (err) {
     // "Falha -> narrative_status='failed', status permanece data_ready"
     // (§8.4, literal) — nunca propaga, o bruto já está disponível.
+    // `console.error` só para visibilidade (mesmo raciocínio do catch
+    // externo, achado real do T-059v) — nunca muda o comportamento.
+    console.error(`export-worker: narrativa do job ${jobId} falhou:`, err);
     await updateExportJob(deps.client, jobId, {
       narrative_status: "failed",
       narrative_error_code: "AI_GENERATION_TIMEOUT",

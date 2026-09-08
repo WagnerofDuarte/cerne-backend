@@ -29,6 +29,16 @@ function isAuthorized(req: Request): boolean {
 
 Deno.serve(async (req) => {
   if (!isAuthorized(req)) {
+    // Nunca loga o bearer recebido nem `env.workerSecret` (seria vazar o
+    // próprio segredo no log) — só o fato de ter rejeitado, para dar
+    // visibilidade sem comprometer a credencial. Achado real (T-059v):
+    // este 401 é exatamente o sintoma de `experiment.worker_config` com um
+    // `shared_secret` diferente do `EXPORT_WORKER_SECRET` do `.env.local`
+    // (ou do `.env.local` desatualizado — a função precisa ser reiniciada
+    // depois de editar o arquivo).
+    console.error(
+      "export-worker: 401 — bearer recebido não bate com EXPORT_WORKER_SECRET (confira experiment.worker_config.shared_secret e se o .env.local foi recarregado)",
+    );
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -43,6 +53,7 @@ Deno.serve(async (req) => {
     // corpo ausente/inválido — tratado abaixo pelo `!jobId`.
   }
   if (!jobId) {
+    console.error("export-worker: 400 — jobId ausente/inválido no corpo da requisição");
     return new Response(JSON.stringify({ error: "jobId ausente" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
