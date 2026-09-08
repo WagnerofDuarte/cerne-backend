@@ -1,0 +1,30 @@
+-- T-054 — GRANTs que faltavam para o `export-worker` (service_role) tocar
+-- `export_jobs`/`entries` diretamente por SQL — achado real do T-059v
+-- (Wagner), primeira vez que este projeto exercitou `service_role` contra
+-- uma TABELA de verdade (todo uso anterior de `service_role`, migração
+-- 0016, era `GRANT EXECUTE` numa RPC `SECURITY DEFINER`, que roda com o
+-- privilégio do DONO da função, não do chamador — por isso a lacuna nunca
+-- tinha aparecido antes).
+--
+-- Erro real, reproduzido rodando contra o Supabase CLI de verdade:
+--   permission denied for table export_jobs (42501)
+--   hint: "Grant the required privileges to the current role with:
+--          GRANT SELECT ON public.export_jobs TO service_role;"
+--
+-- `service_role` tem `BYPASSRLS` (é por isso que ignora toda política de
+-- `export_jobs_select_own`/`entries_select_own`, migração 0009) — mas
+-- BYPASSRLS e GRANT de tabela são dois mecanismos independentes do
+-- Postgres: bypassar RLS não dispensa o GRANT comum de SELECT/UPDATE na
+-- tabela. As migrações 0007/0009 só previram `authenticated` como
+-- consumidor dessas tabelas — `service_role` nunca tinha ficado nu porque
+-- nunca tinha sido de fato exercitado antes desta fase.
+--
+-- Só o que `export-repo.ts` ("funções de worker") de fato usa:
+--   - `export_jobs`: `getExportJobForWorker` (SELECT) e `updateExportJob`
+--     (UPDATE) — nunca INSERT/DELETE (quem cria o job é a Edge Function de
+--     app, com o JWT do usuário; quem apaga é a cascata do `auth.users`,
+--     migração 0017).
+--   - `entries`: `fetchEntriesForExport` (SELECT) — o worker nunca grava
+--     em `entries`.
+grant select, update on public.export_jobs to service_role;
+grant select on public.entries to service_role;

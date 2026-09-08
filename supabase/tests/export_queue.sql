@@ -15,7 +15,7 @@
 
 set search_path to public, extensions;
 begin;
-select plan(7);
+select plan(9);
 
 insert into auth.users (id, email) values
   ('99999999-0000-0000-0000-000000000001', 'pgtap-user-x@cerne.test'),
@@ -124,6 +124,25 @@ select is(
     where message ->> 'job_id' = '88888888-0000-0000-0000-000000000001'),
   0,
   'export_dispatch_pending_jobs: remove a mensagem da fila depois de despachar'
+);
+
+-- 7/8) `service_role` (o worker, T-054) precisa de GRANT explícito em
+-- `export_jobs`/`entries` — migração 0020, achado real do T-059v (Wagner):
+-- `service_role` tem BYPASSRLS, mas isso não dispensa o GRANT comum de
+-- tabela (dois mecanismos independentes do Postgres); sem esta migração, a
+-- 1ª chamada real do worker batia em "permission denied for table
+-- export_jobs" (42501) — só apareceu contra o Supabase CLI de verdade
+-- porque nenhum uso anterior de `service_role` neste projeto tocava tabela
+-- diretamente (só RPC `SECURITY DEFINER`, que roda com o privilégio do
+-- dono da função, não do chamador).
+select ok(
+  has_table_privilege('service_role', 'public.export_jobs', 'select')
+  and has_table_privilege('service_role', 'public.export_jobs', 'update'),
+  'export_jobs: service_role com SELECT e UPDATE (migração 0020)'
+);
+select ok(
+  has_table_privilege('service_role', 'public.entries', 'select'),
+  'entries: service_role com SELECT (migração 0020)'
 );
 
 select * from finish();
