@@ -120,7 +120,22 @@ Isso força o relógio de dentro do Docker a bater com o do Mac agora mesmo
 Se ainda assim persistir, o próximo passo é mais pesado: `supabase stop`,
 fechar o Docker Desktop de verdade (não só a janela — sair do app pelo
 menu), abrir de novo, `supabase start` (recria os containers do zero,
-inclusive o de autenticação).
+inclusive o de autenticação). **Confirmado (Wagner):** um reboot completo
+do Mac também resolve, sem precisar de nenhum comando manual — resincroniza
+tudo de uma vez.
+
+**Lembrete de processo — não é bug, mas já causou 2 falsos alarmes:**
+depois de QUALQUER `supabase db reset`, a tabela `experiment.worker_config`
+volta vazia — o `INSERT` (acima) precisa ser refeito, com o MESMO valor
+que está em `EXPORT_WORKER_SECRET` no `.env.local` naquele momento. Se os
+dois ficarem diferentes (ex.: você trocou o `.env.local` depois de um
+`db reset` anterior e esqueceu de atualizar a tabela), o sintoma é
+exatamente o mesmo de antes — job preso em `pending` — só que agora o log
+é claro sobre o motivo: `401 — bearer recebido não bate com
+EXPORT_WORKER_SECRET`. Conferir os dois lados (`select shared_secret from
+experiment.worker_config;` vs. `grep EXPORT_WORKER_SECRET
+supabase/.env.local`) resolve na hora, com um simples `UPDATE` — não
+precisa de outro `db reset`.
 
 Sem `experiment.worker_config` configurado (de qualquer jeito, certa ou
 errada), `export_dispatch_pending_jobs()` roda a cada 15s mas sai em
