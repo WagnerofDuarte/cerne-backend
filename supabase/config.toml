@@ -456,6 +456,34 @@ import_map = "../deno.json"
 [functions.chat-insight-create]
 verify_jwt = false
 import_map = "../deno.json"
+[functions.export-summary-create]
+verify_jwt = false
+import_map = "../deno.json"
+[functions.export-status-get]
+verify_jwt = false
+import_map = "../deno.json"
+[functions.export-download-get]
+verify_jwt = false
+import_map = "../deno.json"
+[functions.export-worker]
+# Não é um dos 23 endpoints de app — só o pg_cron/pg_net da migração 0014
+# chama isto, com Authorization: Bearer <service_role key> (checado à mão
+# em index.ts). `verify_jwt = false` pelo mesmo motivo de sempre: quem
+# decide o que é uma credencial válida aqui é o próprio código.
+verify_jwt = false
+import_map = "../deno.json"
+[functions.dashboard-aggregate-get]
+verify_jwt = false
+import_map = "../deno.json"
+[functions.dashboard-narrative-get]
+verify_jwt = false
+import_map = "../deno.json"
+[functions.account-settings-update]
+verify_jwt = false
+import_map = "../deno.json"
+[functions.account-delete]
+verify_jwt = false
+import_map = "../deno.json"
 
 [analytics]
 enabled = true

@@ -119,6 +119,53 @@ export function readOcrEnv(): OcrEnv {
   };
 }
 
+// --- Ambiente do worker de exportação (T-054) --------------------------
+//
+// Único consumidor de `SUPABASE_SERVICE_ROLE_KEY` neste projeto (regra
+// nº5 — "só em workers de fila") e único que NÃO passa por `readAppEnv`/
+// `buildGatewayDeps`: `export-worker` não é um dos 23 endpoints do
+// `registry.ts`, não roda atrás de `runGateway` (sem X-Test-Fault/
+// X-Test-Now/Zod — ver `export-worker/index.ts`), então não precisa de
+// `GatewayDeps`. Precisa, sim, do restante do aparato de IA/replay
+// (`ANTHROPIC_API_KEY`, `PROMPT_VERSION`, `REPLAY_MODE`) para a narrativa
+// (T-054) usar o mesmo cache de replay que todo o resto do projeto.
+//
+// `workerSecret` (`EXPORT_WORKER_SECRET`) — achado real do T-059v, Wagner:
+// a CLI (`supabase functions serve --env-file`) recusa carregar do
+// `.env.local` qualquer variável cujo nome comece com `SUPABASE_`
+// ("Env name cannot start with SUPABASE_, skipping:
+// SUPABASE_SERVICE_ROLE_KEY") — sempre injeta o próprio valor interno da
+// stack local no lugar, fora do controle do desenvolvedor. Isso torna
+// `supabaseServiceRoleKey` inútil para a checagem de autorização do
+// `export-worker` (`index.ts`): o valor que o `pg_net` da migração 0014
+// envia no header `Authorization` (configurado manualmente em
+// `experiment.worker_config`) nunca seria igual ao que a função serve
+// localmente enxergaria via `SUPABASE_SERVICE_ROLE_KEY`. A correção é um
+// segredo PRÓPRIO do worker, sem o prefixo `SUPABASE_` (a CLI não mexe
+// nele) — `supabaseServiceRoleKey` continua existindo, sem mudança de
+// papel: é só para o cliente de banco (`worker-db.ts`), nunca para
+// autorizar a chamada HTTP.
+export interface WorkerEnv {
+  readonly supabaseUrl: string;
+  readonly supabaseServiceRoleKey: string;
+  readonly workerSecret: string;
+  readonly anthropicApiKey: string;
+  readonly promptVersion: string;
+  readonly replayMode: ReplayMode;
+  readonly fetchImpl?: typeof fetch;
+}
+
+export function readWorkerEnv(): WorkerEnv {
+  return {
+    supabaseUrl: requireEnv("SUPABASE_URL"),
+    supabaseServiceRoleKey: requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    workerSecret: requireEnv("EXPORT_WORKER_SECRET"),
+    anthropicApiKey: requireEnv("ANTHROPIC_API_KEY"),
+    promptVersion: requireEnv("PROMPT_VERSION"),
+    replayMode: parseReplayMode(Deno.env.get("REPLAY_MODE")),
+  };
+}
+
 /**
  * Monta as `ReplayDeps` (T-030) a partir de um cliente de banco já
  * escolhido pelo chamador — os endpoints de IA sempre exigem sessão

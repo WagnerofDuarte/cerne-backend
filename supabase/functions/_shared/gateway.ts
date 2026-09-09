@@ -61,14 +61,31 @@ export interface StreamHandlerResult {
   readonly headers?: HeadersInit;
 }
 
+/**
+ * 302 para uma URL assinada (T-055, `GET /export/:jobId/download`) — o
+ * único dos 23 endpoints com `contract.response.kind === "redirect"`
+ * (registrado desde T-026). Sem corpo JSON: a `Response` é só o status e o
+ * header `Location`.
+ */
+export interface RedirectHandlerResult {
+  readonly location: string;
+  readonly headers?: HeadersInit;
+}
+
 export type GatewayHandler<TBody = unknown, TQuery = unknown> = (
   ctx: GatewayContext<TBody, TQuery>,
-) => Promise<HandlerResult | StreamHandlerResult>;
+) => Promise<HandlerResult | StreamHandlerResult | RedirectHandlerResult>;
 
 function isStreamResult(
-  result: HandlerResult | StreamHandlerResult,
+  result: HandlerResult | StreamHandlerResult | RedirectHandlerResult,
 ): result is StreamHandlerResult {
   return "stream" in result;
+}
+
+function isRedirectResult(
+  result: HandlerResult | StreamHandlerResult | RedirectHandlerResult,
+): result is RedirectHandlerResult {
+  return "location" in result;
 }
 
 export interface GatewayDeps {
@@ -152,14 +169,20 @@ export async function runGateway<TBody = unknown, TQuery = unknown>(
     };
     const result = await handler(ctx);
 
-    // 8) Serializar. Duas formas possíveis: envelope JSON (a maioria dos
-    // 23 endpoints) ou stream SSE (`chat.messages.send`/`.retry`, D12) —
-    // a segunda nunca passa por `dataResponse`, o corpo já é o
-    // `ReadableStream` que o handler/T-044 montou.
+    // 8) Serializar. Três formas possíveis: envelope JSON (a maioria dos
+    // 23 endpoints), stream SSE (`chat.messages.send`/`.retry`, D12) ou
+    // redirect 302 (`export.download.get`, T-055) — nenhuma das duas
+    // últimas passa por `dataResponse`.
     if (isStreamResult(result)) {
       const headers = sseHeaders(result.headers);
       headers.set("X-Request-Id", requestId);
       return new Response(result.stream, { status: 200, headers });
+    }
+    if (isRedirectResult(result)) {
+      const headers = new Headers(result.headers);
+      headers.set("Location", result.location);
+      headers.set("X-Request-Id", requestId);
+      return new Response(null, { status: 302, headers });
     }
     const headers = new Headers(result.headers);
     headers.set("X-Request-Id", requestId);
@@ -356,6 +379,16 @@ function handleError(err: unknown, requestId: string): Response {
   // Última rede de segurança — um bug real do handler não pode vazar
   // detalhe interno na resposta, mas também não pode inventar um dos 13
   // códigos que não se aplica.
+  //
+  // Achado real (T-059v, Wagner): antes deste `console.error`, um 500
+  // aqui não deixava NENHUM rastro — nem na resposta (por design, não
+  // pode vazar detalhe interno) nem no log do `functions serve` (nada
+  // era impresso). Resultado: um bug real de banco/RPC virava um "500
+  // genérico" sem nenhuma pista de qual foi o erro de verdade, mesmo nos
+  // próprios logs do servidor. `console.error` aqui não muda a resposta
+  // ao cliente (continua sem vazar nada) — só passa a aparecer no log do
+  // `functions serve`, correlacionável pelo `requestId` de ambos.
+  console.error(`[${requestId}] erro não tratado:`, err);
   const headers = new Headers({ "Content-Type": "application/json", "X-Request-Id": requestId });
   return new Response(
     JSON.stringify({ code: "INTERNAL_ERROR", message: "erro inesperado no servidor", requestId }),
