@@ -563,14 +563,29 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 ## Fase 6 — Reprodutibilidade
 **Prazo: 21/09 a 22/09/2026**
 
+**Nota de ambiente e pendências herdadas (levantadas em 09/09/2026, sessão de revisão prévia — nenhum código desta fase escrito ainda):**
+
+- **Bloqueio central, herdado desde a Fase 1: `docs/roteiro_de_validacao.md` não existe neste repositório.** `T-060`, `T-061` e `T-062` dependem literalmente "do roteiro" — sem ele, nenhum dos três tem como rodar de verdade. O próprio `Contexto Geral.md` é explícito: *"Sem esse roteiro, o cache é decorativo."* Cadeia de dependência consolidada aqui, para não ficar espalhada entre as notas de 5 fases diferentes:
+  1. `GATE-09` (`T-021`) está **parcial** — só os 3 pares semânticos do RF06 foram aprovados (02/09/2026); os **7 textos literais** do roteiro continuam pendentes.
+  2. Esses 7 textos dependem de dois documentos-fonte citados pelos três documentos de planejamento mas **ausentes deste repositório** (confirmado por varredura completa em 01/09/2026, listado em "Itens em aberto" no fim deste arquivo): `Cerne_-_prototipo_final.html` (o protótipo congelado — cujo hash também precisa constar no documento de requisitos, item do checklist final de congelamento) e `Requisitos_e_Fluxo_de_Telas_TCC.md` (fonte de RF01–RF10/RNF01–RNF09).
+  3. Isso vinha sendo adiado desde 02/09/2026 com lembrete explícito para "retomar perto da Fase 6" — **este é o ponto em que precisa ser resolvido de fato com o Wagner**, antes de `T-060` poder começar. Não é uma lacuna para o agente preencher por conta própria (regra nº4).
+- **Achado desta revisão (09/09/2026) — `T-063` não depende do roteiro.** Usa só os 5 endpoints já congelados (§10.3 do plano técnico) e os cabeçalhos `X-Test-Fault` implementados desde a Fase 2/3 — pode ser adiantado independentemente do bloqueio acima, inclusive antes de `T-060`.
+- **Achado desta revisão (09/09/2026) — os jobs de CI que `T-062` pressupõe nunca foram criados.** `.github/workflows/ci.yml` só tem o job `contracts` (Fase 2, `T-033`); os jobs `db`, `api` e `determinism` da tabela do plano técnico §11.4 não nasceram em nenhum `T-0NN` das Fases 1–5. Como a própria tabela lista `determinism` como dependente de `db` e `api`, `T-062` provavelmente precisa nascer maior do que só "o job determinism" — os três juntos. Dimensionar isso com o Wagner antes de começar a tarefa, em vez de assumir o escopo por conta própria.
+- **Diferença em relação ao bloqueio de rede das Fases 1–5:** este sandbox continua sem conseguir baixar as imagens Docker do Supabase, o que segue impedindo validar `T-060`/`T-061` localmente aqui (mesmo padrão de sempre — fica para o Wagner rodar). O CI do GitHub Actions, porém, roda em runners com internet normal — `T-062` (`db`/`api`/`determinism`) rodando lá seria a 1ª vez que este projeto prova `supabase start`/`db reset` de forma automatizada, sem depender de uma rodada manual do Wagner.
+- **Duas divergências menores, herdadas desde a Fase 1, relevantes agora porque o roteiro usa as fixtures diretamente:** (1) `fixtures/trancricoes.md` foi versionado sem o "s" de "trans" — os documentos-fonte esperam `transcricoes.md`; ainda não decidido se renomeia. (2) o áudio fixture tem 50,4s reais, não os 42s descritos no plano técnico — só importa se algum passo do roteiro comparar a duração exata numa asserção.
+
 - [ ] 🔴 **[MANUAL] `T-060` / `GATE-10`** — Executar o roteiro de validação em modo `record`
   - **O quê:** Executar manualmente, passo a passo, o roteiro de validação completo (textos exatos, imagens exatas, ordem exata de telas) contra o ambiente com `REPLAY_MODE=record`. Isso popula o cache de replay chamando as IAs de verdade, uma única vez.
   - **Por que agora:** é a única execução em que a IA real é chamada para gravar o cache — todas as execuções seguintes (inclusive nos dois ciclos comparativos) devem reaproveitá-lo, nunca regravar.
   - **Como confirmo:** cache populado; taxa de acerto (`hit_count`) reportada.
+  - ⚠️ **Pré-requisito bloqueante (ver nota de ambiente acima):** `docs/roteiro_de_validacao.md` precisa existir e o `GATE-09` precisa estar fechado (7 textos literais aprovados) antes deste item poder começar.
 
 - [ ] `T-061` Script de export/import do cache entre ambientes — **Critério:** cache gravado no `ciclo-a` é exportado e importado no `ciclo-b` **sem regravar**. ⚠️ Gravar duas vezes (uma por ciclo) anula todo o mecanismo de determinismo.
+  - A lógica em si (copiar linhas de `experiment.ai_replay_cache`) não depende do conteúdo do roteiro — pode ser escrita e testada com dados fictícios antes do `GATE-09` fechar. Só a prova fim a fim (cache real do `ciclo-a` para o `ciclo-b`) depende do `T-060` já ter rodado.
 - [ ] `T-062` Job `determinism` no CI (roteiro 2x em `replay_strict`, banco recém-criado, comparação byte a byte normalizando IDs/timestamps) — **Critério:** duas execuções produzem output idêntico.
+  - ⚠️ **Escopo maior do que o texto original sugere (ver nota de ambiente acima):** os jobs `db` e `api` (§11.4 do plano técnico) ainda não existem em `ci.yml` e `determinism` depende dos dois — confirmar com o Wagner se os três nascem juntos aqui.
 - [ ] `T-063` Os 15 cenários de injeção de falha evidenciados — **Critério:** `fault_injection_log` com 15 linhas distintas (5 endpoints × 3 tipos: `timeout`, `malformed`, `offline`).
+  - Não depende do roteiro nem do `GATE-09` — pode ser adiantado a qualquer momento (ver nota de ambiente acima).
 
 ---
 
@@ -658,6 +673,7 @@ Repositório separado, somente leitura, contendo: documentação da API (contrat
 - **3 códigos de erro:** o `Contexto Geral.md` (§13) lista `EXPORT_EMPTY_PERIOD`, `PAYLOAD_TOO_LARGE` e `OCR_NO_TEXT` como "nomes ainda a definir na Fase 2". O plano técnico (§8.7), mais recente e operacional, **já os nomeia** dessa forma. Tratar como resolvido pelo plano técnico, mas vale confirmar com o Wagner antes da `T-025` para eliminar a divergência entre os dois documentos.
 - **3 arquivos referenciados, não encontrados neste repositório** (confirmado por varredura completa do repo em 01/09/2026): `roteiro_de_validacao.md`, `Cerne_-_prototipo_final.html` (protótipo congelado, hash citado mas não localizado) e `Ciencia_Orientador_Divergencias_de_Escopo.md`. O próprio `Contexto Geral.md` (§25) já sinaliza isso como pendência. `roteiro_de_validacao.md` é especialmente crítico: sem ele, **o cache de replay é decorativo** (§6.3 do plano iniciante) — precisa existir antes da `T-060`.
 - Também referenciado mas ausente: `Requisitos_e_Fluxo_de_Telas_TCC.md` / `_v2.md` (fonte de requisitos RF01–RF10/RNF01–RNF09) — os três documentos atuais o citam como fonte, mas não está neste repositório.
+- **Consolidado com detalhe de bloqueio na "Nota de ambiente e pendências herdadas" no início da Fase 6** (`T-060`/`T-061`/`T-062`) — inclui também um achado novo (09/09/2026): os jobs de CI `db`/`api`/`determinism` do §11.4 do plano técnico nunca foram criados em nenhuma fase anterior.
 
 ---
 
