@@ -56,7 +56,10 @@ const TARGETS: readonly FaultTarget[] = [
     endpoint: "/entries",
     build: () => ({
       path: "/entries-create",
-      body: { content: "conteúdo irrelevante (offline nunca chega na validação)", source: "manual" },
+      body: {
+        content: "conteúdo irrelevante (offline nunca chega na validação)",
+        source: "manual",
+      },
     }),
   },
   {
@@ -142,7 +145,9 @@ async function fireOffline(
 
 async function main() {
   if (!TEST_FAULT_KEY) {
-    console.error("Falta TEST_FAULT_KEY no ambiente — sem ele X-Test-Fault é ignorado em silêncio (§10.1).");
+    console.error(
+      "Falta TEST_FAULT_KEY no ambiente — sem ele X-Test-Fault é ignorado em silêncio (§10.1).",
+    );
     Deno.exit(1);
   }
 
@@ -150,7 +155,9 @@ async function main() {
   const accessToken = await login();
   const sessionId = await createSession(accessToken);
 
-  console.log(`\nDisparando os 5 cenários de 'offline' (até ${OFFLINE_CLIENT_TIMEOUT_MS}ms de espera cada)...`);
+  console.log(
+    `\nDisparando os 5 cenários de 'offline' (até ${OFFLINE_CLIENT_TIMEOUT_MS}ms de espera cada)...`,
+  );
   let offlineOk = true;
   for (const target of TARGETS) {
     const confirmed = await fireOffline(target, accessToken, sessionId);
@@ -164,7 +171,9 @@ async function main() {
     Deno.exit(1);
   }
 
-  console.log(`\nConferindo experiment.fault_injection_log em ${DB_URL.replace(/:[^:@]*@/, ":***@")}...`);
+  console.log(
+    `\nConferindo experiment.fault_injection_log em ${DB_URL.replace(/:[^:@]*@/, ":***@")}...`,
+  );
   const sql = postgres(DB_URL);
   try {
     const rows = await sql<{ endpoint: string; fault_type: string; count: string }[]>`
@@ -189,7 +198,11 @@ async function main() {
       }
     }
 
-    console.log(`\n${expectedEndpoints.length * expectedTypes.length - missing}/15 cenários confirmados no log.`);
+    console.log(
+      `\n${
+        expectedEndpoints.length * expectedTypes.length - missing
+      }/15 cenários confirmados no log.`,
+    );
     if (missing > 0) {
       console.error(
         `Faltam ${missing}. Rodou tests/hurl/falhas_15.hurl (timeout/malformed) antes deste script?`,

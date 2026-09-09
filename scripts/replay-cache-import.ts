@@ -124,7 +124,9 @@ async function main() {
       // Não deveria acontecer (todo `cache_key` do arquivo é único, é PK na
       // origem) — se acontecer, o arquivo de entrada está corrompido/editado à mão.
       console.error(
-        `Aviso: ${rows.length} linhas no arquivo, mas só ${inserted + alreadyPresent} contabilizadas.`,
+        `Aviso: ${rows.length} linhas no arquivo, mas só ${
+          inserted + alreadyPresent
+        } contabilizadas.`,
       );
     }
   } finally {

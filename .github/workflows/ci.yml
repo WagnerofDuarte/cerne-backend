@@ -34,3 +34,89 @@ jobs:
 
       - name: Falhar se o OpenAPI gerado divergir do commitado
         run: git diff --exit-code contracts/openapi.yaml
+
+  # T-062 (Fase 6, Plano técnico §11.3/§11.4) — "o gate mais importante do
+  # CI": roda tests/determinism/roteiro_validacao.hurl duas vezes, banco
+  # recém-criado cada vez, e falha se as duas execuções não baterem byte a
+  # byte (normalizando ids/timestamps) — ver tests/determinism/run.sh para
+  # o fluxo completo e a lacuna real do §11.3 que ele preenche (de onde
+  # vem o cache que `replay_strict` precisa ter pronto).
+  #
+  # Desvio deliberado da tabela de dependências do §11.4 ("Depende de: db,
+  # api"): os jobs `db`/`api` ainda não existem neste workflow (só
+  # `contracts`, até aqui) — não é algo desta tarefa (T-062 só pede "job
+  # determinism no CI"), criá-los do zero, sem poder validar contra o
+  # Supabase CLI real neste sandbox, seria escopo maior do que o pedido.
+  # Por isso este job é autocontido (sobe o próprio `supabase start`, roda
+  # a própria suíte pgTAP/Hurl indiretamente como parte do roteiro) — não
+  # depende de nenhum outro job. Sinalizado, não escondido: `db`/`api`
+  # dedicados continuam uma lacuna real deste CI, pré-existente.
+  #
+  # NÃO VALIDADO CONTRA O GITHUB ACTIONS DE VERDADE (mesmo bloqueio de
+  # Docker/rede que impediu `supabase start` neste sandbox durante todas as
+  # fases anteriores) — a lógica que decide passa/falha
+  # (tests/determinism/normalize.ts/compare.ts) foi validada de ponta a
+  # ponta contra relatórios reais do `hurl` 6.1.1 nesta sessão; a
+  # orquestração abaixo (supabase CLI, secrets) segue o mesmo padrão já
+  # confirmado por comando pelo Wagner nas suítes Hurl das Fases 3-5, mas
+  # precisa da 1ª execução real (gate manual) para confirmar de fato.
+  #
+  # PRÉ-REQUISITO ainda pendente (GATE-07, Fase 0): faltam secrets no
+  # repositório GitHub — os 6 já cadastrados (SUPABASE_URL/ANON_KEY/
+  # SERVICE_ROLE_KEY, ANTHROPIC_API_KEY, VOYAGE_API_KEY, SUPABASE_ACCESS_
+  # TOKEN) não bastam; faltam TEST_FAULT_KEY, PROMPT_VERSION,
+  # TEST_ACCOUNT_PASSWORD (Fase 0 já previa esses 3) e EXPORT_WORKER_SECRET
+  # (novo desde a Fase 5) — REPLAY_MODE/OCR_MAX_BYTES não são necessários
+  # aqui (REPLAY_MODE é setado pelo próprio run.sh por passada; OCR_MAX_BYTES
+  # só importa pra suíte Hurl comum, não para este roteiro). Sem eles este
+  # job falha na autenticação/na chamada de IA, não no mecanismo em si.
+  determinism:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Baixar hurl (mesma versão fixada em tests/hurl/README.md)
+        run: |
+          curl -fsSL -o /tmp/hurl.tar.gz \
+            https://github.com/Orange-OpenSource/hurl/releases/download/6.1.1/hurl-6.1.1-x86_64-unknown-linux-gnu.tar.gz
+          tar xzf /tmp/hurl.tar.gz -C /tmp
+          sudo cp /tmp/hurl-6.1.1-x86_64-unknown-linux-gnu/bin/{hurl,hurlfmt} /usr/local/bin/
+
+      - name: Montar supabase/.env.local a partir dos secrets
+        run: |
+          cat > supabase/.env.local <<EOF
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          VOYAGE_API_KEY=${{ secrets.VOYAGE_API_KEY }}
+          PROMPT_VERSION=${{ secrets.PROMPT_VERSION }}
+          TEST_FAULT_KEY=${{ secrets.TEST_FAULT_KEY }}
+          TEST_ACCOUNT_PASSWORD=${{ secrets.TEST_ACCOUNT_PASSWORD }}
+          EXPORT_WORKER_SECRET=${{ secrets.EXPORT_WORKER_SECRET }}
+          REPLAY_MODE=off
+          EOF
+          # REPLAY_MODE real é decidido por passada dentro de run.sh (ele
+          # gera sua própria cópia temporária com o valor certo) — o `off`
+          # aqui é só o default seguro caso algo chame `functions serve`
+          # fora do script (nunca grava/serve cache por engano).
+
+      - name: supabase start
+        run: supabase start
+
+      - name: Gerar variáveis da fixture de OCR (mesma convenção do media_ocr.hurl)
+        run: |
+          { printf 'ocr_image_base64='; base64 < fixtures/media/ocr_fixture_01.png | tr -d '\n'; echo; } \
+            > /tmp/determinism-ocr-vars.properties
+          echo "OCR_VARS_FILE=/tmp/determinism-ocr-vars.properties" >> "$GITHUB_ENV"
+
+      - name: Job determinism (duas execuções, compara)
+        env:
+          TEST_FAULT_KEY: ${{ secrets.TEST_FAULT_KEY }}
+          EXPORT_WORKER_SECRET: ${{ secrets.EXPORT_WORKER_SECRET }}
+        run: bash tests/determinism/run.sh
