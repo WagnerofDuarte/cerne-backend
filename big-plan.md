@@ -707,7 +707,7 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
 **Protótipo**
 - [x] Congelado, com hash registrado no documento de requisitos — `ux/Cerne - Prototipo Final.html`, SHA-256 `fa4e0bb9...50e5876` (completo em `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13), recebido e registrado em 10/09/2026
-- [ ] Todos os estados de tela sustentados por algum endpoint — desbloqueado agora que `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` existe no repositório; ainda não verificado item a item contra os 23 endpoints
+- [x] Todos os estados de tela sustentados por algum endpoint — verificado em 10/09/2026, tela a tela (Seção 5.2) e critério a critério (RF01–RF10), contra os 23 endpoints reais de `contracts/zod/registry.ts`. Todas as 7 telas confirmadas sustentadas pela interação que de fato descrevem. 3 divergências encontradas e corrigidas no próprio `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` (Seção 6/7 estavam na versão pré-reconciliação já sinalizada no `Contexto Geral.md`): `POST /auth/biometric-unlock` não existe (intencional, D2 — biometria é 100% local ao aparelho); tags/filtro por categoria não têm endpoint nenhum (intencional, T-015 — consistente com a própria Seção 2 do documento, que já marcava "Categorização Dinâmica" como sem implementação funcional); `PATCH`/`DELETE /entries/:id` não existem (intencional, D3 — entradas imutáveis) — o critério de aceite do RF09 que citava "editar/apagar uma entrada" foi ajustado, já que nenhuma tela descreve essa ação de fato. Nenhuma decisão D1–D18 foi reaberta — só o texto do documento de requisitos foi corrigido para bater com o backend congelado.
 
 **Entrega**
 - [ ] Repositório de entrega publicado, somente leitura

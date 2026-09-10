@@ -40,12 +40,12 @@ Geração de um resumo narrativo por IA (Claude Haiku 4.5) a partir das entradas
 - Falha na geração do texto narrativo (timeout do modelo) ainda permite baixar os dados brutos sem narrativa — a exportação não fica bloqueada por uma falha de IA.
 ### RF06 — Busca Semântica/Filtro sobre Entradas do Diário
 **Estressa:** BLoC + camada de dados / offline.
-Busca por similaridade semântica (via embeddings Voyage AI, reaproveitando os já gerados no RF01) combinada com filtros de metadado (data, categoria, tipo de entrada).
+Busca por similaridade semântica (via embeddings Voyage AI, reaproveitando os já gerados no RF01) combinada com filtros de metadado (data, tipo de entrada). *(Correção em 10/09/2026 — a versão anterior deste requisito também citava "categoria" como dimensão de filtro; o backend real não implementa filtro por tag/categoria em nenhum endpoint — `GET /entries`/`GET /entries/search` só aceitam `source` e `dateFrom`/`dateTo`. Consistente com a Seção 2: a categorização é "tags manuais" e não recebe implementação funcional em nenhum dos dois ciclos — tags só aparecem embutidas, para leitura, no objeto `Entry`.)*
 **Critérios de aceite:**
 - Busca por um termo encontra entradas relacionadas semanticamente mesmo sem a palavra exata (ex: buscar "ansiedade" retorna uma entrada que só menciona "nervosismo", sem o termo literal).
 - Debounce de busca de 300ms: digitação rápida dispara uma única consulta, não uma por tecla.
 - Resultado do cache local de leitura permanece consistente com o servidor após reconexão, sem duplicar itens exibidos *(ajustado — arquitetura é cloud-only; offline permite apenas visualização de dados já cacheados, não escrita)*.
-- Dois ou mais filtros aplicados simultaneamente restringem com lógica E (não OU).
+- Dois ou mais filtros aplicados simultaneamente (`source`+`dateFrom`/`dateTo`) restringem com lógica E (não OU).
 - Limpar filtros retorna à lista completa sem reiniciar a tela.
 ### RF07 — Histórico Multi-fonte (Timeline)
 **Estressa:** composição de múltiplos BLoCs.
@@ -66,7 +66,7 @@ Sugestão inserida no chat sem o usuário pedir. **Escopo medido: apenas o mecan
 Gráfico de evolução com balanço textual, computado sob demanda ao abrir a aba de Configurações. **Escopo medido: agregação e renderização, nunca a qualidade do texto narrativo.**
 **Critérios de aceite:**
 - Renderiza corretamente em três cenários: zero entradas, uma entrada, >30 entradas.
-- Agregação recalcula corretamente após criar/editar/apagar uma entrada (teste de invalidação de cache).
+- Agregação recalcula corretamente após criar uma entrada (teste de invalidação de cache). *(Correção em 10/09/2026 — a versão anterior também citava "editar/apagar uma entrada"; entradas são imutáveis por decisão de arquitetura, D3 — "conteúdo original íntegro, nunca censurado". Não existe `PATCH /entries/:id` nem `DELETE /entries/:id` no backend real, e nenhuma tela deste documento descreve uma ação de editar/apagar entrada — o texto anterior não correspondia a nenhuma interação de fato prevista.)*
 - Texto narrativo da IA só é checado quanto a não quebrar a UI em casos extremos — nunca quanto ao conteúdo.
 ### RF10 — Salvar Mensagem do Chat como Entrada
 **Estressa:** comunicação entre features dentro da Clean Architecture (o chat precisa acionar a criação de uma entrada sem depender diretamente da camada de dados do RF01).
@@ -133,6 +133,15 @@ Identidade minimalista, paleta acolhedora e neutra, tipografia sans-serif legív
 ---
  
 ## 6. Inventário de Endpoints do Backend
+
+*(Seção corrigida em 10/09/2026 para bater com os 23 endpoints do backend
+real e congelado — `contracts/openapi.yaml` é a fonte de verdade de
+contrato; esta seção é só uma leitura orientada por tela/requisito dela.
+A versão anterior desta seção continha 3 endpoints descartados por
+decisões de arquitetura (`biometric-unlock` — D2, `PATCH /entries/:id` —
+D3, os 3 endpoints de tag — T-015) e não citava o endpoint de retry do
+chat, que existe de verdade — ver nota de reconciliação em
+`context/Contexto Geral.md`.)*
  
 Backend único, compartilhado pelos dois ciclos (Spec Kit e BMAD-METHOD), construído com RIPER antes de qualquer um dos ciclos começar. Todos os endpoints seguem o contrato de erro padronizado do RNF09 — `{ code, message, retryable }` — e passam por RLS no Supabase. Provedores de IA: Claude (chat, visão/OCR, resumo, insights, dashboard, detecção de PII) e Voyage AI (embeddings) — únicas duas dependências externas de IA do backend. Transcrição de áudio (STT) roda on-device (Whisper), nunca chega ao backend como arquivo de áudio.
  
@@ -141,22 +150,21 @@ Backend único, compartilhado pelos dois ciclos (Spec Kit e BMAD-METHOD), constr
 |---|---|---|
 | `POST /auth/signup` | RF03 | — |
 | `POST /auth/login` | RF03 | — |
-| `POST /auth/biometric-unlock` | RF03 | — |
 | `POST /auth/refresh` | RF03, RF07 | — |
 | `GET /auth/session` | RF07 | — |
 | `POST /auth/logout` | RF03 | — |
+
+**Sem endpoint de "biometric-unlock" — intencional (D2):** a barreira Face ID/Touch ID/PIN da Tela 0.1 é validada 100% no aparelho, nunca no servidor. O backend só guarda a preferência (`profiles.biometricEnabled`, lida/escrita via `PATCH /account/settings`, Seção 6.7) — não valida biometria nenhuma. Depois de passar pela barreira local, o app usa a sessão já existente (renovada via `POST /auth/refresh` se preciso, ou `POST /auth/login` se tiver expirado de vez).
  
 ### 6.2 Ingestão e entradas
 | Endpoint | Requisito | IA envolvida |
 |---|---|---|
 | `POST /media/ocr` — imagem não é persistida, só o texto extraído segue adiante | RF02 | Claude Haiku 4.5 (visão) |
 | `POST /entries` — cria entrada; dispara checagem de PII e geração de embedding internamente; aceita `source` (`manual`/`audio`/`photo`/`chat`) e `chatMessageId` quando a origem é o chat | RF01, RF02, RF10 | Claude Haiku 4.5 (PII) + Voyage AI (embedding) |
-| `GET /entries` | RF07 | — |
+| `GET /entries` — filtra por `source`/`dateFrom`/`dateTo`; tags só aparecem embutidas na resposta, para leitura | RF07 | — |
 | `GET /entries/:id` | RF07 | — |
-| `PATCH /entries/:id` | RF07 | Claude Haiku 4.5 (re-checagem de PII se conteúdo mudou) |
-| `POST /entries/:id/tags` | Extensão | — |
-| `DELETE /entries/:id/tags/:tagId` | Extensão | — |
-| `GET /tags` | Extensão | — |
+
+**Sem edição/exclusão de entrada, nem endpoint de tag — intencional (D3/T-015):** entradas são imutáveis depois de criadas (D3 — "conteúdo original íntegro, nunca censurado"); não existe `PATCH`/`DELETE /entries/:id`. Tags (`tags`/`entry_tags`) são populadas só pelo seed de teste — nenhum endpoint cria, apaga ou filtra por tag/categoria (ver correção do RF06, Seção 1). Isso é consistente com a Seção 2 deste documento: a "Categorização Dinâmica" foi simplificada para tags manuais que **não recebem implementação funcional em nenhum dos dois ciclos comparativos**.
  
 ### 6.3 Chat e memória (RAG)
 | Endpoint | Requisito | IA envolvida |
@@ -165,13 +173,14 @@ Backend único, compartilhado pelos dois ciclos (Spec Kit e BMAD-METHOD), constr
 | `GET /chat/sessions` — funciona offline (cache) | RF04, RF07 | — |
 | `GET /chat/sessions/:id/messages` — funciona offline (cache) | RF04 | — |
 | `POST /chat/sessions/:id/messages` — streaming (SSE); bloqueado offline | RF04 | Voyage AI (embedding da pergunta) + Claude Sonnet 5 (resposta) |
+| `POST /chat/sessions/:id/messages/:userMessageId/retry` — regenera a resposta sem duplicar a pergunta do usuário; é o que sustenta "mensagem parcial visível com indicação de falha, e um jeito de tentar de novo" do RF04 | RF04 | Voyage AI (embedding, reaproveitado do cache) + Claude Sonnet 5 (resposta) |
 | `POST /chat/sessions/:id/insight` | RF08 | Claude Haiku 4.5 |
 | `POST /entries` — chamado a partir do botão "salvar no diário" (ver 6.2) | RF10 | Claude Haiku 4.5 (PII) + Voyage AI (embedding) |
  
 ### 6.4 Busca
 | Endpoint | Requisito | IA envolvida |
 |---|---|---|
-| `GET /entries/search?q=&category=&dateFrom=&dateTo=` | RF06 | Voyage AI (embedding da query) |
+| `GET /entries/search?q=&source=&dateFrom=&dateTo=&limit=` — sem `category` (ver correção do RF06, Seção 1) | RF06 | Voyage AI (embedding da query) |
  
 ### 6.5 Exportação
 | Endpoint | Requisito | IA envolvida |
@@ -195,6 +204,13 @@ Backend único, compartilhado pelos dois ciclos (Spec Kit e BMAD-METHOD), constr
 ---
  
 ## 7. Fluxograma Integrado — Telas × Requisitos × Backend
+
+*(Diagrama corrigido em 10/09/2026 — mesma reconciliação da Seção 6: `E03`
+deixou de ser uma chamada de endpoint (não existe `biometric-unlock`),
+`E13`/`E14` (edição de entrada / tag) foram removidos por não existirem,
+e o endpoint de retry do chat (`E06b`) e o de status da exportação
+(`E15b`) — que existem de verdade mas não apareciam aqui — foram
+adicionados.)*
  
 ```mermaid
 flowchart TD
@@ -205,8 +221,8 @@ flowchart TD
  
     subgraph T01["Tela 0.1 — Cofre de autenticação · RF03"]
         direction TB
-        E02["POST /auth/login"]
-        E03["POST /auth/biometric-unlock"]
+        E02b["Face ID / Touch ID / PIN — validado no aparelho, sem chamada ao backend (D2)"]
+        E02["POST /auth/login (se a sessão já tiver expirado de vez)"]
     end
  
     subgraph T1["Tela 1 — Home (chat) · RF04, RF08, RF10"]
@@ -214,6 +230,7 @@ flowchart TD
         E04["POST /chat/sessions"]
         E05["GET /chat/sessions/:id/messages"]
         E06["POST /chat/sessions/:id/messages"]
+        E06b["POST .../messages/:userMessageId/retry"]
         E07["POST /chat/sessions/:id/insight"]
         E07b["POST /entries (salvar mensagem)"]
     end
@@ -231,11 +248,10 @@ flowchart TD
  
     subgraph T4["Tela 4 — Meus registros · RF05, RF06, RF07"]
         direction TB
-        E11["GET /entries"]
+        E11["GET /entries (source/dateFrom/dateTo — sem categoria)"]
         E12["GET /entries/search"]
-        E13["PATCH /entries/:id"]
-        E14["POST /entries/:id/tags"]
         E15["POST /export/summary"]
+        E15b["GET /export/:jobId/status"]
         E16["GET /export/:jobId/download"]
     end
  
