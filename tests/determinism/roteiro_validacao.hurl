@@ -168,6 +168,21 @@ jsonpath "$.data.status" matches "^(ready|failed)$"
 # --- Bloco 4 — RF06 Busca semântica + filtro AND ------------------------
 # Os 3 pares aprovados (GATE-09, fixtures/pares_semanticos.md) — nenhum
 # texto usa a raiz da palavra buscada, a busca só acha por embedding.
+#
+# Achado real (Wagner, rodando contra o Supabase CLI de verdade): "cansaço"
+# e "gratidão" precisam ir com o acento já convertido pra %XX na URL
+# (`%C3%A7`/`%C3%A3`) — hurl/libcurl NÃO codifica automaticamente um
+# caractere não-ASCII escrito cru na URL do `.hurl` (diferente de "ansiedade",
+# sem acento, que sempre funcionou). Sem isso, o Kong (o proxy que o
+# `supabase functions serve` local roda na frente de toda função) rejeita a
+# requisição com 400 e corpo vazio ANTES dela chegar na nossa Edge Function
+# (confirmado pelo tempo de resposta de 1ms e `Content-Length: 0` — nosso
+# código sempre devolve um corpo JSON, mesmo em erro). Não é um bug do
+# gateway.ts/entries-search: um cliente HTTP de verdade (ex. `Uri` do
+# Dart/Flutter) já codifica isso sozinho ao montar a URL; é só o `.hurl`
+# escrito cru que precisa ajudar. `entries-search` decodifica de volta pra
+# "cansaço"/"gratidão" normalmente (`URLSearchParams.get`), então o texto
+# que entra no cache/na chamada à Voyage continua o literal correto.
 
 GET {{base_url}}/entries-search?q=ansiedade&limit=5
 Authorization: Bearer {{access_token}}
@@ -178,7 +193,7 @@ HTTP 200
 jsonpath "$.meta.mode" == "semantic"
 jsonpath "$.data[?(@.id=='a0000000-0000-0000-0004-000000000003')]" exists
 
-GET {{base_url}}/entries-search?q=cansaço&limit=5
+GET {{base_url}}/entries-search?q=cansa%C3%A7o&limit=5
 Authorization: Bearer {{access_token}}
 X-Test-Key: {{test_fault_key}}
 X-Test-Now: 2026-09-23T09:41:00Z
@@ -186,7 +201,7 @@ HTTP 200
 [Asserts]
 jsonpath "$.data[?(@.id=='a0000000-0000-0000-0004-000000000004')]" exists
 
-GET {{base_url}}/entries-search?q=gratidão&limit=5
+GET {{base_url}}/entries-search?q=gratid%C3%A3o&limit=5
 Authorization: Bearer {{access_token}}
 X-Test-Key: {{test_fault_key}}
 X-Test-Now: 2026-09-23T09:41:00Z

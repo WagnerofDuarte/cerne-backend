@@ -176,3 +176,24 @@ execução de verdade contra `supabase functions serve` — inclusive se as
 suposições sobre RAG/embedding realmente devolvem exatamente as entradas
 plantadas nos termos exatos assumidos aqui. Isso só o `T-060` (Wagner, com
 o Docker local) confirma.
+
+## Achado real (Wagner, 1ª tentativa de `T-060`) — acento cru na URL
+
+O Bloco 4 (busca por "cansaço"/"gratidão") falhava com `400` e corpo vazio
+rodando contra o Supabase CLI de verdade — nunca apareceu no mock desta
+sessão, que é tolerante demais para pegar isso. Causa raiz confirmada via
+`hurl --verbose` isolando só essa chamada: a resposta vinha do **Kong**
+(`Via: kong/2.8.1`, `Content-Length: 0`, respondida em 1ms — rápido demais
+pra ter passado pela nossa Edge Function, que sempre devolve corpo JSON
+mesmo em erro) — o proxy que o `supabase functions serve` local roda na
+frente de toda função rejeita um caractere não-ASCII cru (`ç`/`ã`) na linha
+da requisição HTTP. `hurl`/libcurl não codifica isso automaticamente por
+conta própria (diferente de "ansiedade", sem acento, que sempre funcionou).
+
+**Não é um bug do projeto** — um cliente HTTP de verdade (`Uri` do
+Dart/Flutter, por exemplo) já resolve isso sozinho ao montar a URL; é só o
+`.hurl`, escrito com o texto cru, que precisa ajudar. Corrigido em
+`tests/determinism/roteiro_validacao.hurl` codificando os dois termos na
+URL (`cansa%C3%A7o`, `gratid%C3%A3o`) — `entries-search` decodifica de
+volta pra "cansaço"/"gratidão" normalmente (`URLSearchParams.get`), então
+o texto que entra no cache/na Voyage continua o literal correto.
