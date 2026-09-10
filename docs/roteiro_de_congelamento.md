@@ -290,11 +290,16 @@ Dentro do clone: preencher `credenciais/ciclo-a.md`/`ciclo-b.md` à mão
 
 ---
 
-## Pendência que atravessa este roteiro, não resolvida aqui
+## Pendência do protótipo — resolvida em 10/09/2026
 
-O item do checklist final "protótipo congelado, com hash registrado no
-documento de requisitos" depende de arquivos que você disse que ia me
-passar (`Cerne_-_prototipo_final.html`, `Requisitos_e_Fluxo_de_Telas_TCC.md`,
-e o `Ciencia_Orientador_Divergencias_de_Escopo.md`) — ainda não recebidos
-nesta sessão. Assim que chegarem, calculo o hash e registro onde os
-documentos-fonte pedem.
+`ux/Cerne - Prototipo Final.html` e `ux/Requisitos_e_Fluxo_de_Telas_TCC.md`
+foram recebidos; hash SHA-256 calculado e registrado em
+`ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13. O terceiro arquivo pedido
+junto (`Ciencia_Orientador_Divergencias_de_Escopo.md`) foi dispensado pelo
+Wagner — é um documento de gestão de risco acadêmico (divergência de
+escopo para a orientadora), sem relação com nenhuma tarefa técnica deste
+backend.
+
+Ainda em aberto: verificar item "todos os estados de tela sustentados por
+algum endpoint" do checklist final, agora que `Requisitos_e_Fluxo_de_
+Telas_TCC.md` está disponível — não feito ainda.

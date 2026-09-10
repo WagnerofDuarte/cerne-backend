@@ -379,5 +379,27 @@ Todo endpoint retorna `{ code, message, retryable }`. Códigos mínimos a implem
  
 ---
  
+## 13. Congelamento do Protótipo (Fase 7, checklist final de congelamento)
+
+O arquivo `ux/Cerne - Prototipo Final.html` é a referência visual congelada
+do produto — nenhuma tela/estado descrito neste documento pode divergir
+dele a partir de 10/09/2026. Hash calculado para detectar qualquer edição
+posterior, acidental ou não:
+
+| Campo | Valor |
+|---|---|
+| Arquivo | `ux/Cerne - Prototipo Final.html` |
+| SHA-256 | `fa4e0bb956ed5f9903de694559a71ad6438507955976ad8ed76e7974050e5876` |
+| Tamanho | 3.603.106 bytes |
+| Data do congelamento | 2026-09-10T22:38:11Z |
+
+**Como reconferir:** `sha256sum "ux/Cerne - Prototipo Final.html"` deve
+reproduzir o mesmo valor acima. Se não bater, o protótipo foi alterado
+depois do congelamento — parar e reportar antes de prosseguir com
+qualquer um dos dois ciclos comparativos (armadilha do apêndice do
+`big-plan.md`: nenhuma referência congelada muda depois do congelamento).
+
+---
+
 *Documento de referência — Tópicos 2, 3 e 4 da revisão de escopo do TCC. Consolidado a partir da discussão registrada na memória do projeto.*
  
