@@ -607,12 +607,12 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
   `tests/hurl/falhas_15.hurl` cobre os 10 cenários observáveis por HTTP (`timeout`+`malformed` × 5 endpoints). **Achado real, confirmado contra o binário `hurl` 6.1.1 de verdade:** `offline` nunca produz uma `Response` (design de `gateway.ts::simulateOffline`) e o Hurl não tem como esperar por "nenhuma resposta" — o único limitador de tempo (`--max-time`) é *cli-only*, aplicaria a TODAS as entradas do arquivo, derrubando as 5 de `timeout` (que legitimamente levam 35s) antes delas terminarem. `scripts/verify-fault-injection-log.ts` cobre o resto: dispara os 5 `offline` com um `AbortSignal` curto do lado do cliente (confirma "sem resposta" de verdade) e confere as 15 combinações distintas direto em `experiment.fault_injection_log` (schema sem rota HTTP). Validado nesta sessão: `hurlfmt --check` limpo; 12/12 requisições do `.hurl` contra um mock HTTP local reproduzindo os efeitos reais do `gateway.ts`; a query de agrupamento do script testada contra o Postgres real do `T-061` com as 15 linhas esperadas.
 
-  **Não validado:** os 5 cenários de `offline` e o tempo real de ~3min (5×35s sequenciais) contra `supabase functions serve` de verdade.
+  **✅ Confirmado pelo Wagner em 10/09/2026, contra o Supabase CLI real:** `tests/hurl/falhas_15.hurl` — `Success`, 12/12 requisições (~3 minutos, como esperado pelas 5 esperas de 35s). `scripts/verify-fault-injection-log.ts` — os 5 cenários de `offline` confirmados (nenhum respondeu, como deveria) e as **15/15 combinações distintas confirmadas em `experiment.fault_injection_log`**. `T-063` fechado de ponta a ponta, sem nenhum achado novo (o único achado real desta tarefa já tinha sido o de design, acima, encontrado ainda no sandbox).
 
-- [ ] 🔴 **[MANUAL] `T-063v`** — Validar `T-061`/`T-062`/`T-063` contra o Supabase CLI/Docker real e o GitHub Actions
-  - **O quê:** Depois de `T-060`/`GATE-10` confirmado (cache real populado): (1) rodar `tests/hurl/falhas_15.hurl` + `scripts/verify-fault-injection-log.ts` contra `supabase functions serve` local; (2) exportar o cache do `dev` e importar num banco de teste local, conferir `--force`; (3) completar os secrets pendentes do `GATE-07` (`TEST_FAULT_KEY`, `PROMPT_VERSION`, `TEST_ACCOUNT_PASSWORD`, `EXPORT_WORKER_SECRET`) e rodar `tests/determinism/run.sh` uma vez local antes de confiar no job `determinism` do CI.
-  - **Por que agora:** nenhum dos três (`pgmq`/`pg_net`/Storage à parte) foi exercitado contra Docker/GitHub Actions de verdade neste sandbox — mesmo motivo de todo `T-0xxv` anterior.
-  - **Como confirmo:** você reporta o resultado dos 3 passos.
+- [ ] 🔴 **[MANUAL] `T-063v`** — Validar `T-061`/`T-062` contra o Supabase CLI/Docker real e o GitHub Actions
+  - **O quê:** (1) ✅ ~~rodar `tests/hurl/falhas_15.hurl` + `scripts/verify-fault-injection-log.ts` contra `supabase functions serve` local~~ — feito acima, junto do `T-063`; (2) exportar o cache do `dev` e importar num banco de teste local, conferir `--force`; (3) completar os secrets pendentes do `GATE-07` (`TEST_FAULT_KEY` ✅, `EXPORT_WORKER_SECRET` ✅, `PROMPT_VERSION`, `TEST_ACCOUNT_PASSWORD` — os 2 últimos ainda a confirmar cadastrados) e rodar `tests/determinism/run.sh` uma vez local antes de confiar no job `determinism` do CI.
+  - **Por que agora:** nenhum dos dois (`pgmq`/`pg_net` à parte) foi exercitado contra Docker/GitHub Actions de verdade neste sandbox — mesmo motivo de todo `T-0xxv` anterior.
+  - **Como confirmo:** você reporta o resultado dos passos 2 e 3.
 
 ---
 
