@@ -13,6 +13,14 @@ function report(entries: HurlFileReport["entries"]): HurlFileReport[] {
   return [{ entries }];
 }
 
+/** `url` só importa para o teste de endpoints de auth opacos — o padrão vazio nunca casa com nenhum. */
+function call(
+  response: HurlFileReport["entries"][number]["calls"][number]["response"],
+  url = "",
+): HurlFileReport["entries"][number]["calls"][number] {
+  return { request: { url }, response };
+}
+
 function bodies(map: Record<string, string>): (path: string) => string {
   return (path) => {
     const body = map[path];
@@ -25,13 +33,11 @@ Deno.test("duas execuções com UUIDs/timestamps diferentes, mas mesma estrutura
   const run1 = report([
     {
       index: 1,
-      calls: [{
-        response: {
-          status: 200,
-          headers: [{ name: "content-type", value: "application/json" }],
-          body: "r1",
-        },
-      }],
+      calls: [call({
+        status: 200,
+        headers: [{ name: "content-type", value: "application/json" }],
+        body: "r1",
+      })],
     },
   ]);
   const run2 = structuredClone(run1);
@@ -54,8 +60,8 @@ Deno.test("duas execuções com UUIDs/timestamps diferentes, mas mesma estrutura
 
 Deno.test("o MESMO id reaparecendo em duas respostas normaliza pro MESMO placeholder nas duas execuções", () => {
   const entries: HurlFileReport["entries"] = [
-    { index: 1, calls: [{ response: { status: 200, headers: [], body: "created" } }] },
-    { index: 2, calls: [{ response: { status: 200, headers: [], body: "fetched" } }] },
+    { index: 1, calls: [call({ status: 200, headers: [], body: "created" })] },
+    { index: 2, calls: [call({ status: 200, headers: [], body: "fetched" })] },
   ];
 
   const t1 = buildTranscript(
@@ -78,8 +84,8 @@ Deno.test("o MESMO id reaparecendo em duas respostas normaliza pro MESMO placeho
 
 Deno.test("achado real que este mecanismo existe pra pegar: id devolvido na criação DEIXA de bater com o lido depois -> diferença real, não normalizada", () => {
   const entries: HurlFileReport["entries"] = [
-    { index: 1, calls: [{ response: { status: 200, headers: [], body: "created" } }] },
-    { index: 2, calls: [{ response: { status: 200, headers: [], body: "fetched" } }] },
+    { index: 1, calls: [call({ status: 200, headers: [], body: "created" })] },
+    { index: 2, calls: [call({ status: 200, headers: [], body: "fetched" })] },
   ];
 
   // run1: o id da criação é o mesmo lido depois (comportamento correto)
@@ -110,7 +116,7 @@ Deno.test("achado real que este mecanismo existe pra pegar: id devolvido na cria
 
 Deno.test("diferença real no corpo (não id/timestamp) é detectada", () => {
   const entries: HurlFileReport["entries"] = [
-    { index: 1, calls: [{ response: { status: 200, headers: [], body: "b" } }] },
+    { index: 1, calls: [call({ status: 200, headers: [], body: "b" })] },
   ];
 
   const t1 = buildTranscript(report(entries), bodies({ b: '{"status":"ready"}' }));
@@ -127,11 +133,11 @@ Deno.test("diferença real no corpo (não id/timestamp) é detectada", () => {
 
 Deno.test("diferença de status HTTP é detectada", () => {
   const t1 = buildTranscript(
-    report([{ index: 1, calls: [{ response: { status: 200, headers: [], body: "b" } }] }]),
+    report([{ index: 1, calls: [call({ status: 200, headers: [], body: "b" })] }]),
     bodies({ b: "{}" }),
   );
   const t2 = buildTranscript(
-    report([{ index: 1, calls: [{ response: { status: 500, headers: [], body: "b" } }] }]),
+    report([{ index: 1, calls: [call({ status: 500, headers: [], body: "b" })] }]),
     bodies({ b: "{}" }),
   );
 
@@ -142,32 +148,28 @@ Deno.test("headers voláteis (date, content-length) são ignorados — não são
   const t1 = buildTranscript(
     report([{
       index: 1,
-      calls: [{
-        response: {
-          status: 200,
-          headers: [
-            { name: "date", value: "Wed, 09 Sep 2026 21:25:21 GMT" },
-            { name: "content-length", value: "10" },
-          ],
-          body: "b",
-        },
-      }],
+      calls: [call({
+        status: 200,
+        headers: [
+          { name: "date", value: "Wed, 09 Sep 2026 21:25:21 GMT" },
+          { name: "content-length", value: "10" },
+        ],
+        body: "b",
+      })],
     }]),
     bodies({ b: "{}" }),
   );
   const t2 = buildTranscript(
     report([{
       index: 1,
-      calls: [{
-        response: {
-          status: 200,
-          headers: [
-            { name: "date", value: "Wed, 09 Sep 2026 22:00:00 GMT" },
-            { name: "content-length", value: "999" },
-          ],
-          body: "b",
-        },
-      }],
+      calls: [call({
+        status: 200,
+        headers: [
+          { name: "date", value: "Wed, 09 Sep 2026 22:00:00 GMT" },
+          { name: "content-length", value: "999" },
+        ],
+        body: "b",
+      })],
     }]),
     bodies({ b: "{}" }),
   );
@@ -180,17 +182,15 @@ Deno.test("achado real (Wagner, T-062): headers de latência do Kong também sã
     buildTranscript(
       report([{
         index: 1,
-        calls: [{
-          response: {
-            status: 200,
-            headers: [
-              { name: "X-Kong-Proxy-Latency", value: proxyMs },
-              { name: "X-Kong-Upstream-Latency", value: upstreamMs },
-              { name: "Via", value: "kong/2.8.1" },
-            ],
-            body: "b",
-          },
-        }],
+        calls: [call({
+          status: 200,
+          headers: [
+            { name: "X-Kong-Proxy-Latency", value: proxyMs },
+            { name: "X-Kong-Upstream-Latency", value: upstreamMs },
+            { name: "Via", value: "kong/2.8.1" },
+          ],
+          body: "b",
+        })],
       }]),
       bodies({ b: "{}" }),
     );
@@ -201,14 +201,53 @@ Deno.test("achado real (Wagner, T-062): headers de latência do Kong também sã
   assertEquals(diffTranscripts(withLatency("0", "216"), withLatency("1", "204")).identical, true);
 });
 
+Deno.test("achado real (Wagner, T-062): corpo de auth-login/refresh/signup não é comparado — sessão sempre nova por design", () => {
+  // Valores reais observados: dois logins com a MESMA conta, JWT e
+  // refreshToken completamente diferentes (exp/iat/session_id embutidos
+  // no token, opacos para as regex de UUID/ISO acima) — nunca poderiam
+  // bater, e não é o tipo de não-determinismo que este teste mede (D1:
+  // "proxy fino do GoTrue").
+  const loginBody1 =
+    '{"data":{"session":{"accessToken":"eyJhbGci...token-A","refreshToken":"dkyasjx752hn","expiresAt":1789009142}}}';
+  const loginBody2 =
+    '{"data":{"session":{"accessToken":"eyJhbGci...token-B","refreshToken":"d6we6evb36ir","expiresAt":1789009223}}}';
+
+  const t1 = buildTranscript(
+    report([{
+      index: 1,
+      calls: [
+        call(
+          { status: 200, headers: [], body: "login" },
+          "http://127.0.0.1:54321/functions/v1/auth-login",
+        ),
+      ],
+    }]),
+    bodies({ login: loginBody1 }),
+  );
+  const t2 = buildTranscript(
+    report([{
+      index: 1,
+      calls: [
+        call(
+          { status: 200, headers: [], body: "login" },
+          "http://127.0.0.1:54321/functions/v1/auth-login",
+        ),
+      ],
+    }]),
+    bodies({ login: loginBody2 }),
+  );
+
+  assertEquals(diffTranscripts(t1, t2).identical, true);
+});
+
 Deno.test("ordem das entradas por index é respeitada mesmo se o relatório vier fora de ordem", () => {
   const outOfOrder: HurlFileReport["entries"] = [
-    { index: 2, calls: [{ response: { status: 200, headers: [], body: "second" } }] },
-    { index: 1, calls: [{ response: { status: 200, headers: [], body: "first" } }] },
+    { index: 2, calls: [call({ status: 200, headers: [], body: "second" })] },
+    { index: 1, calls: [call({ status: 200, headers: [], body: "first" })] },
   ];
   const inOrder: HurlFileReport["entries"] = [
-    { index: 1, calls: [{ response: { status: 200, headers: [], body: "first" } }] },
-    { index: 2, calls: [{ response: { status: 200, headers: [], body: "second" } }] },
+    { index: 1, calls: [call({ status: 200, headers: [], body: "first" })] },
+    { index: 2, calls: [call({ status: 200, headers: [], body: "second" })] },
   ];
 
   const t1 = buildTranscript(report(outOfOrder), bodies({ first: "A", second: "B" }));

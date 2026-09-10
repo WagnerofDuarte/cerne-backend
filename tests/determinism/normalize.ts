@@ -33,7 +33,12 @@ export interface ReportResponse {
   readonly body: string;
 }
 
+export interface ReportRequest {
+  readonly url: string;
+}
+
 export interface ReportCall {
+  readonly request: ReportRequest;
   readonly response: ReportResponse;
 }
 
@@ -70,6 +75,19 @@ const VOLATILE_HEADERS = new Set([
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const ISO_TIMESTAMP_RE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g;
+
+/**
+ * Os 3 endpoints "sem sessão prévia" (gateway.ts: signup/login/refresh) —
+ * cada chamada emite uma sessão GoTrue nova (JWT + refreshToken opaco),
+ * nunca reproduzível entre execuções por desenho, mesmo com tudo mais
+ * idêntico. `auth-session` fica de fora de propósito: só lê a sessão já
+ * existente, não emite nada novo.
+ */
+const OPAQUE_AUTH_PATH_SEGMENTS = ["/auth-login", "/auth-refresh", "/auth-signup"];
+
+function isOpaqueAuthEndpoint(url: string): boolean {
+  return OPAQUE_AUTH_PATH_SEGMENTS.some((segment) => url.includes(segment));
+}
 
 class PositionalNormalizer {
   private readonly uuidPlaceholders = new Map<string, string>();
@@ -126,6 +144,21 @@ export function buildTranscript(
         for (const header of sortedHeaders) {
           if (VOLATILE_HEADERS.has(header.name.toLowerCase())) continue;
           lines.push(`header ${header.name.toLowerCase()}: ${normalizer.normalize(header.value)}`);
+        }
+        if (isOpaqueAuthEndpoint(call.request.url)) {
+          // Achado real (Wagner, T-062, 1ª execução completa contra o
+          // Supabase CLI): o corpo de auth-login/refresh/signup embute um
+          // JWT inteiro (com `exp`/`iat` em epoch, não capturados pelas
+          // regex de UUID/ISO acima) + um `refreshToken` opaco do GoTrue —
+          // nenhum dos dois é reproduzível entre execuções, por design
+          // (sessão nova a cada login), e não é o tipo de não-determinismo
+          // que este teste existe para pegar (D1: "proxy fino do GoTrue",
+          // fora do que o projeto controla/cacheia). Comparar só status +
+          // headers pra esses 3 endpoints; o corpo em si nunca é igual.
+          lines.push(
+            "<corpo de auth GoTrue — sessão/token sempre novos por design, não comparado>",
+          );
+          continue;
         }
         let body: string;
         try {
