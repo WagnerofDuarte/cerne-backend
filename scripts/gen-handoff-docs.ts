@@ -28,7 +28,8 @@
 //
 // O que fica de fora deste diretório de propósito, até o GATE-11:
 //   - cópias de contracts/openapi.yaml, docs/roteiro_de_validacao.md,
-//     fixtures/, tests/hurl/*.hurl, docs/bugs_conhecidos.md — todos já
+//     fixtures/, tests/hurl/*.hurl, docs/bugs_conhecidos.md, ux/ (protótipo
+//     congelado + documento de requisitos) — todos já
 //     vivem versionados em algum lugar deste repo; duplicá-los aqui cedo
 //     demais só cria uma segunda fonte pra ficar desatualizada. O script
 //     `build-handoff-package.sh` copia tudo isso (mais o que este arquivo
@@ -161,6 +162,8 @@ export function buildReadmeMd(): string {
     "package.sh`, GATE-11) — não duplicado aqui de propósito, para não haver " +
     "duas fontes do mesmo arquivo:\n" +
     "- `api/openapi.yaml` (cópia de `contracts/openapi.yaml`)\n" +
+    "- `ux/` (cópia do protótipo congelado e do documento de requisitos — " +
+    "os dois times precisam saber o que construir, não só contra qual API)\n" +
     "- `roteiro_de_validacao.md` (cópia de `docs/roteiro_de_validacao.md`)\n" +
     "- `fixtures/` (cópia de `fixtures/` — textos, pares semânticos, mídia)\n" +
     "- `testes_contrato/` (cópia de `tests/hurl/*.hurl` + README)\n" +

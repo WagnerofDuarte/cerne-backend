@@ -7,9 +7,12 @@
 # repositório guarda só os documentos GERADOS (scripts/gen-handoff-docs.ts)
 # — taxonomia de erro, mapa de estados, selo de sincronização, política
 # D16, README. O resto do pacote (Seção "Pacote entregue aos dois ciclos"
-# do big-plan.md) já vive versionado em outros diretórios deste repo
-# (contracts/, docs/roteiro_de_validacao.md, fixtures/, tests/hurl/,
-# docs/bugs_conhecidos.md) — duplicar tudo isso dentro de docs/handoff/
+# do big-plan.md, mais `ux/` — protótipo congelado e documento de
+# requisitos, acrescentados em 10/09/2026 por pedido do Wagner: os dois
+# times precisam saber o que construir, não só contra qual API) já vive
+# versionado em outros diretórios deste repo (contracts/, docs/roteiro_
+# de_validacao.md, fixtures/, tests/hurl/, docs/bugs_conhecidos.md, ux/)
+# — duplicar tudo isso dentro de docs/handoff/
 # permanentemente só criaria uma segunda cópia pra ficar desatualizada (e
 # fixtures/media/ sozinho tem ~12MB, seria dobrar esse peso no histórico
 # deste repositório à toa). Este script copia tudo isso **só na hora de
@@ -66,24 +69,31 @@ cp docs/handoff/*.md "$OUT/"
 mkdir -p "$OUT/api"
 cp contracts/openapi.yaml "$OUT/api/openapi.yaml"
 
-# 3. Roteiro de validação.
+# 3. Protótipo congelado + documento de requisitos — os dois times
+#    precisam saber o que construir, não só contra qual API. Adicionado em
+#    10/09/2026, por pedido explícito do Wagner (não estava na lista
+#    original da Seção "Pacote entregue aos dois ciclos" do big-plan.md).
+mkdir -p "$OUT/ux"
+cp "ux/Cerne - Prototipo Final.html" "ux/Requisitos_e_Fluxo_de_Telas_TCC.md" "$OUT/ux/"
+
+# 4. Roteiro de validação.
 cp docs/roteiro_de_validacao.md "$OUT/roteiro_de_validacao.md"
 
-# 4. Fixtures (textos, pares semânticos, mídia).
+# 5. Fixtures (textos, pares semânticos, mídia).
 mkdir -p "$OUT/fixtures/media"
 cp fixtures/textos.json fixtures/pares_semanticos.md fixtures/trancricoes.md "$OUT/fixtures/"
 cp fixtures/media/*.wav fixtures/media/*.png "$OUT/fixtures/media/"
 
-# 5. Coleção de testes de contrato (Hurl) — sem o `falhas_15.hurl` de
+# 6. Coleção de testes de contrato (Hurl) — sem o `falhas_15.hurl` de
 #    injeção de falha do próprio processo de congelamento, que fica
 #    incluído normalmente também (é parte da suíte de contrato).
 mkdir -p "$OUT/testes_contrato"
 cp tests/hurl/*.hurl tests/hurl/README.md "$OUT/testes_contrato/"
 
-# 6. Arquivo de defeitos conhecidos (D16) — igual para os dois ciclos.
+# 7. Arquivo de defeitos conhecidos (D16) — igual para os dois ciclos.
 cp docs/bugs_conhecidos.md "$OUT/bugs_conhecidos.md"
 
-# 7. Placeholder de credenciais — preenchimento SEMPRE manual, nunca por
+# 8. Placeholder de credenciais — preenchimento SEMPRE manual, nunca por
 #    script (nenhuma chave real deve passar por este repositório).
 mkdir -p "$OUT/credenciais"
 cat > "$OUT/credenciais/README.md" <<'EOF'

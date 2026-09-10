@@ -14,6 +14,7 @@ Gerado por `scripts/gen-handoff-docs.ts` (este diretório, versionado em `cerne-
 
 Copiado/preenchido só na hora da publicação (`scripts/build-handoff-package.sh`, GATE-11) — não duplicado aqui de propósito, para não haver duas fontes do mesmo arquivo:
 - `api/openapi.yaml` (cópia de `contracts/openapi.yaml`)
+- `ux/` (cópia do protótipo congelado e do documento de requisitos — os dois times precisam saber o que construir, não só contra qual API)
 - `roteiro_de_validacao.md` (cópia de `docs/roteiro_de_validacao.md`)
 - `fixtures/` (cópia de `fixtures/` — textos, pares semânticos, mídia)
 - `testes_contrato/` (cópia de `tests/hurl/*.hurl` + README)
