@@ -46,8 +46,27 @@ export interface HurlFileReport {
   readonly entries: readonly ReportEntry[];
 }
 
-/** Headers que mudam por natureza sem indicar não-determinismo real. */
-const VOLATILE_HEADERS = new Set(["date", "content-length"]);
+/**
+ * Headers que mudam por natureza sem indicar não-determinismo real.
+ *
+ * Achado real (Wagner, T-062, 1ª execução completa de `run.sh` contra o
+ * Supabase CLI de verdade): `x-kong-proxy-latency`/`x-kong-upstream-
+ * latency` — o Kong (proxy que o `supabase functions serve` local roda na
+ * frente de toda função, ver também `docs/roteiro_de_validacao.md`) marca
+ * cada resposta com quantos milissegundos ela levou pra passar por ele.
+ * Isso nunca é reproduzível entre duas execuções — é tempo de rede/CPU do
+ * momento, não comportamento do sistema — e por isso já derrubou a 1ª
+ * comparação real (`0` vs `1`) mesmo com as duas execuções 100% idênticas
+ * em tudo que a aplicação de fato controla (zero `REPLAY_MISS`, todas as
+ * asserções de negócio batendo). Nunca apareceu nesta sessão porque o mock
+ * HTTP usado para validar `normalize.ts` não tem Kong na frente.
+ */
+const VOLATILE_HEADERS = new Set([
+  "date",
+  "content-length",
+  "x-kong-proxy-latency",
+  "x-kong-upstream-latency",
+]);
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const ISO_TIMESTAMP_RE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g;

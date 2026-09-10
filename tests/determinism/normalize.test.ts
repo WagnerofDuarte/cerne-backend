@@ -175,6 +175,32 @@ Deno.test("headers voláteis (date, content-length) são ignorados — não são
   assertEquals(diffTranscripts(t1, t2).identical, true);
 });
 
+Deno.test("achado real (Wagner, T-062): headers de latência do Kong também são ignorados", () => {
+  const withLatency = (proxyMs: string, upstreamMs: string) =>
+    buildTranscript(
+      report([{
+        index: 1,
+        calls: [{
+          response: {
+            status: 200,
+            headers: [
+              { name: "X-Kong-Proxy-Latency", value: proxyMs },
+              { name: "X-Kong-Upstream-Latency", value: upstreamMs },
+              { name: "Via", value: "kong/2.8.1" },
+            ],
+            body: "b",
+          },
+        }],
+      }]),
+      bodies({ b: "{}" }),
+    );
+
+  // Valores reais observados na 1ª execução completa do run.sh contra o
+  // Supabase CLI — a comparação derrubou por causa só disso, com as duas
+  // rodadas 100% idênticas em tudo que a aplicação de fato controla.
+  assertEquals(diffTranscripts(withLatency("0", "216"), withLatency("1", "204")).identical, true);
+});
+
 Deno.test("ordem das entradas por index é respeitada mesmo se o relatório vier fora de ordem", () => {
   const outOfOrder: HurlFileReport["entries"] = [
     { index: 2, calls: [{ response: { status: 200, headers: [], body: "second" } }] },
