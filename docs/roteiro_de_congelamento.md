@@ -19,12 +19,31 @@ regra nº4 do big-plan: não preencher lacuna calada).
 **Antes de começar:** `git pull origin fase7` (este roteiro e o
 ferramental dos passos 3/10 só existem a partir daí).
 
+**Achados reais desta sessão, ao configurar `ciclo-a` — válidos também
+para `ciclo-b`:**
+- **"Direct connection" pode não resolver (`ENOTFOUND`)** — o host
+  `db.<ref>.supabase.co` só existe via IPv6 em projetos novos, e nem toda
+  rede tem IPv6 funcional. Usar a aba **Session pooler** da mesma tela de
+  Connection String em vez de Direct connection —
+  `postgresql://postgres.<ref>:<senha>@aws-0-<região>.pooler.supabase.com:5432/postgres`.
+  Reparar que o usuário muda de `postgres` para `postgres.<ref>`.
+- **Senha do banco com caractere `@` quebra a connection string** — `@` é
+  o separador entre credencial e host numa URL; se a senha em si contém
+  um `@`, precisa virar `%40` só na hora de montar essa URL (a senha real
+  no Supabase não muda). Alternativa mais simples: resetar a senha do
+  banco desse projeto (Database → Settings → Reset database password)
+  pra uma sem `@`/`:`/`/`.
+- **A ordem do Passo 0 original estava errada** — configurar
+  `experiment.worker_config` (sub-passo 3) precisa vir **depois** do
+  Passo 2 (migrações), não antes: essa tabela só existe depois que as
+  migrações rodam. Corrigido abaixo.
+
 ---
 
 ## Passo 0 — Preparação de `ciclo-a`/`ciclo-b` (não numerado no §12, mas obrigatório antes do passo 2)
 
 Nenhuma fase anterior tocou `ciclo-a`/`ciclo-b` — só `dev` (local, via
-Docker). Isso significa duas coisas que o §12 não escreve explicitamente
+Docker). Isso significa coisas que o §12 não escreve explicitamente
 porque as trata como já resolvidas, mas que precisam acontecer aqui pela
 primeira vez, por projeto (`ciclo-a` e depois `ciclo-b`):
 
@@ -47,21 +66,15 @@ primeira vez, por projeto (`ciclo-a` e depois `ciclo-b`):
    runtime local e o runtime de produção do Supabase, é um achado real,
    não um erro seu — documentar aqui.
 
-3. **Configurar `experiment.worker_config`** (o worker de exportação não
-   desperta sem isso — nota já registrada em `tests/hurl/README.md`
-   desde a Fase 5):
-   ```bash
-   SUPABASE_DB_URL='<connection string do ciclo>' \
-   FUNCTIONS_BASE_URL='https://<ref-do-ciclo>.supabase.co/functions/v1' \
-   EXPORT_WORKER_SECRET='<o mesmo valor do passo 0.1>' \
-     deno run --allow-net --allow-env scripts/configure-worker.ts
-   ```
-   Diferença do uso local: `FUNCTIONS_BASE_URL` aqui é a URL pública do
-   projeto, não `host.docker.internal` (isso só existia porque
-   `pg_net` local roda dentro do container Docker do Postgres; em produção
-   gerenciada, `pg_net` já sai direto para a internet).
+3. ⚠️ **Achado real desta sessão — ordem corrigida:** a versão original
+   deste roteiro pedia pra configurar `experiment.worker_config` aqui, no
+   Passo 0. Está errado: essa tabela só é CRIADA pelas migrações (Passo 2,
+   abaixo) — tentar configurá-la antes disso falha com `relation
+   "experiment.worker_config" does not exist` (confirmado rodando de
+   verdade contra `ciclo-a`). **Este sub-passo foi movido pra depois do
+   Passo 2** — ver lá.
 
-Repetir os 3 sub-passos para `ciclo-b`.
+Repetir os 2 sub-passos (1 e 2) para `ciclo-b`.
 
 ---
 
@@ -107,6 +120,19 @@ depois, antes do passo 6/7).
 
 **Como confirmo:** `supabase db push` sem erro nos dois; `select count(*) from entries where user_id = 'a0000000-0000-0000-0000-000000000001'`
 dá 34 nos dois, igual ao `dev`.
+
+**Agora sim, com a estrutura já criada — o sub-passo 0.3 que tinha sido movido:**
+```bash
+SUPABASE_DB_URL='<connection string do ciclo>' \
+FUNCTIONS_BASE_URL='https://<ref-do-ciclo>.supabase.co/functions/v1' \
+EXPORT_WORKER_SECRET='<o mesmo valor do passo 0.1>' \
+  deno run --allow-net --allow-env scripts/configure-worker.ts
+```
+Diferença do uso local: `FUNCTIONS_BASE_URL` aqui é a URL pública do
+projeto, não `host.docker.internal` (isso só existia porque `pg_net`
+local roda dentro do container Docker do Postgres; em produção
+gerenciada, `pg_net` já sai direto para a internet). Repetir para
+`ciclo-b` também.
 
 ---
 
