@@ -748,8 +748,8 @@ Nenhum ciclo comparativo começa antes de **todos** os itens estarem verdadeiros
 - [ ] Lista dos cinco endpoints de escrita confirmada e congelada
 
 **Protótipo**
-- [ ] Congelado, com hash registrado no documento de requisitos
-- [ ] Todos os estados de tela sustentados por algum endpoint
+- [x] Congelado, com hash registrado no documento de requisitos — `ux/Cerne - Prototipo Final.html` (10/09/2026); ⚠️ **reaberto no mesmo dia** pela decisão de acrescentar o botão "Novo Chat" à Tela 3 — ver `Contexto Geral.md` Seção 2.1 e `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13.1. Hash precisa ser recalculado após a nova versão sair do Claude Design.
+- [x] Todos os estados de tela sustentados por algum endpoint — verificado tela a tela contra os 23 endpoints (`big-plan.md`, checklist final); o novo botão reaproveita `POST /chat/sessions`, sem endpoint novo
 
 **Entrega**
 - [ ] Repositório de entrega publicado, somente leitura

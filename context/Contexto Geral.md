@@ -40,12 +40,14 @@ O app **Cerne** — um diário reflexivo com IA — é o **veículo experimental
 
 ### 2.1 Revisão pós-congelamento do protótipo (10/09/2026)
 
-Decisão registrada **depois** do congelamento inicial do protótipo (31/08) e **antes** do início de qualquer ciclo comparativo (que só começam após o congelamento do backend em 23/09 — ver Seção 18) — portanto sem risco de assimetria entre Ciclo A e Ciclo B, mas com uma pendência formal em aberto:
+**Atualização de contexto:** a linha 36 acima ("protótipo congelado, com hash referenciado na Seção 8 do plano de backend") descrevia a decisão de arquitetura como fechada, mas o arquivo real do protótipo (`ux/Cerne - Prototipo Final.html`) e o documento de requisitos (`ux/Requisitos_e_Fluxo_de_Telas_TCC.md`) só entraram de fato neste repositório em **10/09/2026**, quando o hash SHA-256 concreto foi calculado e registrado (`ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13 — `fa4e0bb9...50e5876`, 3.603.106 bytes, `2026-09-10T22:38:11Z`) e o item correspondente do checklist final marcado `[x]` em `big-plan.md`. É **esse** congelamento concreto, não o de 31/08, que a revisão abaixo reabre.
 
-- **Mudança:** adicionado à Tela 3 (Menu Lateral) um botão explícito **"Novo Chat"**, ausente na versão do protótipo congelada em 31/08.
-- **Motivo:** o fluxo original não dava ao usuário nenhum meio explícito de iniciar um novo assunto de conversa — a criação de sessão só acontecia implicitamente ao enviar a 1ª mensagem (ver Seção 12.3). Esse comportamento implícito **continua existindo** para o caso em que o usuário simplesmente digita na Home sem passar pelo botão; o botão é um segundo caminho para o mesmo endpoint, não uma substituição.
-- **Impacto no backend: nenhum.** `POST /chat/sessions` (`chat.sessions.create`) já existia, já não tinha restrição de uma sessão por usuário, e já não faz parte dos 5 endpoints de fault injection da D6. Nenhuma mudança de contrato, schema ou migração foi necessária.
-- **Pendência formal (checklist da Seção 19):** o hash do protótipo registrado no documento de requisitos precisa ser recalculado e re-registrado após esta alteração, antes de fechar o checklist de congelamento. Até lá, o item "Protótipo congelado, com hash registrado" deve ser tratado como **reaberto**, não como concluído.
+Decisão registrada **depois** desse congelamento concreto e **antes** do início de qualquer ciclo comparativo (que só começam após o congelamento do backend em 23/09 — ver Seção 18) — portanto sem risco de assimetria entre Ciclo A e Ciclo B, mas com uma pendência formal em aberto:
+
+- **Mudança:** adicionar à Tela 3 (Menu Lateral) um botão explícito **"Novo Chat"**, ausente na versão do protótipo cujo hash está registrado hoje.
+- **Motivo:** o fluxo descrito não dá ao usuário nenhum meio explícito de iniciar um novo assunto de conversa — a criação de sessão só acontece implicitamente ao enviar a 1ª mensagem (ver Seção 12.3). Esse comportamento implícito **continua existindo** para o caso em que o usuário simplesmente digita na Home sem passar pelo botão; o botão é um segundo caminho para o mesmo endpoint, não uma substituição.
+- **Impacto no backend: nenhum.** `POST /chat/sessions` (`chat.sessions.create`) já existia, já não tinha restrição de uma sessão por usuário, e já não faz parte dos 5 endpoints de fault injection da D6. Nenhuma mudança de contrato, schema ou migração é necessária.
+- **Pendência formal, já anotada em `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13, `big-plan.md` (checklist final) e `docs/roteiro_de_congelamento.md`:** assim que o botão for aplicado no Claude Design, o SHA-256 acima **deixa de ser válido** — precisa ser recalculado (`sha256sum "ux/Cerne - Prototipo Final.html"`) e re-registrado, e o item "Protótipo congelado" do checklist final volta a ser tratado como **reaberto**, não concluído, até isso acontecer.
 - **Ameaças à validade:** ver nota adicionada à Seção 24 (Circularidade do RNF08).
 
 ---
