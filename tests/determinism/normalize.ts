@@ -74,7 +74,15 @@ const VOLATILE_HEADERS = new Set([
 ]);
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-const ISO_TIMESTAMP_RE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g;
+// Achado real (Wagner, T-062): o Postgres serializa `timestamptz` como
+// deslocamento numérico (`+00:00`), não como `Z` — diferente de todo
+// timestamp que o próprio código deste projeto gera via `.toISOString()`
+// (esses sim terminam em `Z`). Um campo vindo direto do banco (ex.:
+// `insights.created_at`) precisa das duas variantes reconhecidas, senão
+// só metade dos timestamps normaliza e a comparação derruba por um
+// campo que é, na prática, "a hora em que rodei o teste" — não
+// não-determinismo de verdade.
+const ISO_TIMESTAMP_RE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/g;
 
 /**
  * Os 3 endpoints "sem sessão prévia" (gateway.ts: signup/login/refresh) —

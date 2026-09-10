@@ -240,6 +240,30 @@ Deno.test("achado real (Wagner, T-062): corpo de auth-login/refresh/signup não 
   assertEquals(diffTranscripts(t1, t2).identical, true);
 });
 
+Deno.test("achado real (Wagner, T-062): timestamp no formato do Postgres (+00:00, não Z) é normalizado", () => {
+  // Valores reais observados: o MESMO texto de insight gerado pela IA
+  // (prova de que o cache bateu certinho), só o `created_at` do Postgres
+  // (formato +00:00, diferente do `.toISOString()` do próprio código —
+  // esse já terminava em Z e sempre normalizou certo) mudando entre as
+  // duas execuções — hora real em que cada uma rodou, não não-
+  // determinismo do sistema.
+  const insightBody1 =
+    '{"data":{"content":"mesmo texto gerado pela IA","createdAt":"2026-09-10T01:59:02.761367+00:00"}}';
+  const insightBody2 =
+    '{"data":{"content":"mesmo texto gerado pela IA","createdAt":"2026-09-10T02:00:23.740769+00:00"}}';
+
+  const t1 = buildTranscript(
+    report([{ index: 1, calls: [call({ status: 200, headers: [], body: "insight" })] }]),
+    bodies({ insight: insightBody1 }),
+  );
+  const t2 = buildTranscript(
+    report([{ index: 1, calls: [call({ status: 200, headers: [], body: "insight" })] }]),
+    bodies({ insight: insightBody2 }),
+  );
+
+  assertEquals(diffTranscripts(t1, t2).identical, true);
+});
+
 Deno.test("ordem das entradas por index é respeitada mesmo se o relatório vier fora de ordem", () => {
   const outOfOrder: HurlFileReport["entries"] = [
     { index: 2, calls: [call({ status: 200, headers: [], body: "second" })] },
