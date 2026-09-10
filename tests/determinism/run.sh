@@ -116,7 +116,16 @@ backfill_embeddings
 start_functions record
 hurl --test --jobs 1 "${HURL_VARS[@]}" tests/determinism/roteiro_validacao.hurl
 stop_functions
-deno run --allow-net --allow-env scripts/replay-cache-export.ts --out "${CACHE_FILE}"
+# Achado real (GitHub Actions, T-063v): faltava `--allow-write` aqui — o
+# script grava `${CACHE_FILE}` em disco (`replay-cache-export.ts`, linha
+# do `Deno.writeTextFile`). No Mac do Wagner isso nunca falhou porque o
+# terminal é interativo: sem a flag, o Deno pergunta "Allow write access?"
+# na hora e um "y" digitado sem querer/sem reparar resolve — mas um runner
+# de CI não tem terminal pra perguntar nada, então nega direto
+# (`NotCapable`). Escopado ao diretório do próprio arquivo (não
+# `--allow-write` livre) — é a única escrita em disco que este passo faz.
+deno run --allow-net --allow-env --allow-write="$(dirname "${CACHE_FILE}")" \
+  scripts/replay-cache-export.ts --out "${CACHE_FILE}"
 
 echo "=== 2/3 — execução A: banco novo + cache importado + replay_strict ==="
 reset_db

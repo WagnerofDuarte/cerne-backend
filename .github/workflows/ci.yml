@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # T-063v: permite disparar o CI manualmente (aba Actions -> Run workflow,
+  # ou via API) num branch qualquer (ex.: `fase6`) sem precisar abrir PR
+  # contra `main` só para ver o job `determinism` rodar de verdade no
+  # GitHub Actions. Não muda o comportamento de `push`/`pull_request`
+  # acima — só adiciona uma 3ª forma de disparo.
+  workflow_dispatch:
 
 jobs:
   # T-033 (Fase 2, Plano técnico §11.4): "Gera OpenAPI do Zod -> git diff
