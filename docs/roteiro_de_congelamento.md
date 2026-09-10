@@ -107,7 +107,11 @@ literal do §12, mas exigido pela mecânica dos passos seguintes):
 psql '<connection string do ciclo>' -f supabase/seed/seed.sql
 
 # backfill dos embeddings reais da conta A (idempotente — Fase 1, T-022)
-SUPABASE_DB_URL='<connection string do ciclo>' VOYAGE_API_KEY='<...>' \
+# PROMPT_VERSION é obrigatório aqui também (achado real desta sessão) —
+# entra na chave do cache de replay (T-062), mesmo valor do passo 0.1.
+SUPABASE_DB_URL='<connection string do ciclo>' \
+VOYAGE_API_KEY='<...>' \
+PROMPT_VERSION='<o mesmo valor do passo 0.1>' \
   deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts
 ```
 
