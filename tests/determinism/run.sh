@@ -41,6 +41,10 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."  # raiz do repo
 
 ENV_FILE="supabase/.env.local"
 FUNCTIONS_URL="http://127.0.0.1:54321/functions/v1"
+# Endereço que o pg_net (rodando DENTRO do container do Postgres) usa para
+# alcançar o `functions serve` na máquina host — 127.0.0.1 aponta para o
+# próprio container, não para o host (achado real da Fase 5, T-059v).
+WORKER_CALLBACK_URL="http://host.docker.internal:54321/functions/v1"
 DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 CACHE_FILE="$(mktemp -d)/determinism-cache.json"
 REPORT_A="$(mktemp -d)/report-a"
@@ -90,12 +94,12 @@ start_functions() {
 reset_db_and_seed() {
   supabase db reset
   deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts
-  psql "${DB_URL}" -c "
-    insert into experiment.worker_config (functions_base_url, shared_secret)
-    values ('${FUNCTIONS_URL}', '${EXPORT_WORKER_SECRET:?defina EXPORT_WORKER_SECRET (mesmo valor do .env.local)}')
-    on conflict (id) do update set functions_base_url = excluded.functions_base_url,
-                                    shared_secret = excluded.shared_secret;
-  " >/dev/null
+  # Achado real (Wagner, macOS): nem toda máquina tem `psql` instalado —
+  # scripts/configure-worker.ts faz o mesmo INSERT/UPDATE só com `deno`.
+  SUPABASE_DB_URL="${DB_URL}" \
+  FUNCTIONS_BASE_URL="${WORKER_CALLBACK_URL}" \
+  EXPORT_WORKER_SECRET="${EXPORT_WORKER_SECRET:?defina EXPORT_WORKER_SECRET (mesmo valor do .env.local)}" \
+    deno run --allow-net --allow-env scripts/configure-worker.ts
 }
 
 echo "=== 1/3 — passada 'record': popula o cache do zero (chama IA de verdade) ==="
