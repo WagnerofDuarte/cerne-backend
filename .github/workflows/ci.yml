@@ -119,4 +119,10 @@ jobs:
         env:
           TEST_FAULT_KEY: ${{ secrets.TEST_FAULT_KEY }}
           EXPORT_WORKER_SECRET: ${{ secrets.EXPORT_WORKER_SECRET }}
+          # backfill_embeddings() (run.sh) chama scripts/backfill-seed-
+          # embeddings.ts direto (não via `functions serve --env-file`) —
+          # precisa das duas no ambiente do PRÓPRIO run.sh, não só no
+          # supabase/.env.local montado acima.
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+          PROMPT_VERSION: ${{ secrets.PROMPT_VERSION }}
         run: bash tests/determinism/run.sh

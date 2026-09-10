@@ -91,9 +91,8 @@ start_functions() {
   done
 }
 
-reset_db_and_seed() {
+reset_db() {
   supabase db reset
-  deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts
   # Achado real (Wagner, macOS): nem toda máquina tem `psql` instalado —
   # scripts/configure-worker.ts faz o mesmo INSERT/UPDATE só com `deno`.
   SUPABASE_DB_URL="${DB_URL}" \
@@ -102,23 +101,44 @@ reset_db_and_seed() {
     deno run --allow-net --allow-env scripts/configure-worker.ts
 }
 
+backfill_embeddings() {
+  SUPABASE_DB_URL="${DB_URL}" \
+  PROMPT_VERSION="${PROMPT_VERSION:?defina PROMPT_VERSION (mesmo valor do .env.local)}" \
+    deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts
+}
+
 echo "=== 1/3 — passada 'record': popula o cache do zero (chama IA de verdade) ==="
-reset_db_and_seed
+reset_db
+# Cache ainda vazio aqui — a 1ª chamada de cada texto das 33 entradas do
+# seed É real (miss->grava), exatamente como qualquer outra operação de IA
+# desta passada.
+backfill_embeddings
 start_functions record
 hurl --test --jobs 1 "${HURL_VARS[@]}" tests/determinism/roteiro_validacao.hurl
 stop_functions
 deno run --allow-net --allow-env scripts/replay-cache-export.ts --out "${CACHE_FILE}"
 
 echo "=== 2/3 — execução A: banco novo + cache importado + replay_strict ==="
-reset_db_and_seed
+reset_db
+# Achado real (Wagner, T-062): a IMPORTAÇÃO do cache precisa vir ANTES do
+# backfill, não depois — scripts/backfill-seed-embeddings.ts também está
+# atrás do cache de replay (mesmo motivo de qualquer outra chamada de IA:
+# a Voyage não garante o mesmo vetor bit a bit em duas chamadas reais).
+# Importar primeiro garante que o backfill bate cache em vez de chamar a
+# Voyage de novo — sem isso, `entries-search` (RF06) devolveria a mesma
+# entrada, na mesma ordem, mas com um `similarity` sutilmente diferente
+# entre execuções, derrubando a comparação por um campo que a Voyage nunca
+# prometeu manter estável.
 deno run --allow-net --allow-env --allow-read scripts/replay-cache-import.ts --in "${CACHE_FILE}"
+backfill_embeddings
 start_functions replay_strict
 hurl --test --jobs 1 "${HURL_VARS[@]}" --report-json "${REPORT_A}" tests/determinism/roteiro_validacao.hurl
 stop_functions
 
 echo "=== 3/3 — execução B: banco novo (de novo) + MESMO cache importado + replay_strict ==="
-reset_db_and_seed
+reset_db
 deno run --allow-net --allow-env --allow-read scripts/replay-cache-import.ts --in "${CACHE_FILE}"
+backfill_embeddings
 start_functions replay_strict
 hurl --test --jobs 1 "${HURL_VARS[@]}" --report-json "${REPORT_B}" tests/determinism/roteiro_validacao.hurl
 stop_functions
