@@ -7,10 +7,18 @@
 // quando o título ainda está vazio); se o cliente já mandou um `title`
 // aqui, ele nunca é sobrescrito depois.
 //
-// "Criação implícita na 1ª mensagem" (critério de conclusão) é uma
-// decisão de UX do app cliente — não há botão "nova conversa" na tela,
-// mas o app ainda chama este endpoint normalmente por trás; nada aqui
-// muda por causa disso.
+// "Criação implícita na 1ª mensagem" (critério de conclusão original de
+// T-045) era uma decisão de UX do app cliente — não havia botão "nova
+// conversa" na tela, mas o app já chamava este endpoint normalmente por
+// trás; nada aqui mudava por causa disso.
+//
+// Revisão de 10/09/2026 (ver `Contexto Geral.md` Seção 2.1): o protótipo
+// ganhou um botão "Novo Chat" no Menu Lateral. Ele não chama este endpoint
+// diretamente — leva a Home para um estado vazio, e a criação continua
+// acontecendo implicitamente quando o usuário envia a 1ª mensagem dessa
+// conversa nova. Ou seja, o botão é um segundo caminho de UX até o mesmo
+// gatilho, não uma chamada nova nem uma mudança de contrato. Nada neste
+// handler muda por causa disso.
 
 import { createChatSession } from "../_shared/chat-repo.ts";
 import type { GatewayContext, HandlerResult } from "../_shared/gateway.ts";

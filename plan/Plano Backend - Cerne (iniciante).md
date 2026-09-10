@@ -475,7 +475,7 @@ Não existem endpoints de editar nem apagar entrada, nem endpoints de etiqueta.
 
 | Endpoint | O que faz |
 |---|---|
-| Criar conversa | Chamado **implicitamente** ao enviar a primeira mensagem. Não existe botão "nova conversa" |
+| Criar conversa | Chamado ao enviar a primeira mensagem de uma conversa nova. Desde 10/09/2026 também acionado pelo botão "Novo Chat" no menu lateral (que abre a Home vazia, disparando o mesmo endpoint na 1ª mensagem seguinte) — ver `Contexto Geral.md` Seção 2.1 |
 | Listar conversas | Para o menu lateral |
 | Listar mensagens | De uma conversa |
 | Enviar mensagem | Responde em streaming, no formato fixo da D12 |
