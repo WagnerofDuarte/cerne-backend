@@ -240,6 +240,33 @@ Deno.test("achado real (Wagner, T-062): corpo de auth-login/refresh/signup não 
   assertEquals(diffTranscripts(t1, t2).identical, true);
 });
 
+Deno.test("achado real (Wagner, T-062): token de URL assinada do Storage (Location) não é comparado — expira e é assinado, sempre novo por design", () => {
+  // Valores reais observados: mesmo export.download.get, mesmo arquivo
+  // (raw.json), token JWT completamente diferente (iat/exp/assinatura
+  // HMAC nunca se repetem, por desenho de segurança de URL assinada).
+  const location1 =
+    "http://kong:8000/storage/v1/object/sign/exports/a0000000-0000-0000-0000-000000000001/bef90778-1bb4-4fb2-aba5-b47ad542e6e0/raw.json?token=eyJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3ODkwMDcyMjF9.tokenA";
+  const location2 =
+    "http://kong:8000/storage/v1/object/sign/exports/a0000000-0000-0000-0000-000000000001/fc30b11d-d71d-4b4a-9d47-f5be43746645/raw.json?token=eyJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3ODkwMDczMDF9.tokenB";
+
+  const t1 = buildTranscript(
+    report([{
+      index: 1,
+      calls: [call({ status: 302, headers: [{ name: "Location", value: location1 }], body: "b" })],
+    }]),
+    bodies({ b: "" }),
+  );
+  const t2 = buildTranscript(
+    report([{
+      index: 1,
+      calls: [call({ status: 302, headers: [{ name: "Location", value: location2 }], body: "b" })],
+    }]),
+    bodies({ b: "" }),
+  );
+
+  assertEquals(diffTranscripts(t1, t2).identical, true);
+});
+
 Deno.test("achado real (Wagner, T-062): timestamp no formato do Postgres (+00:00, não Z) é normalizado", () => {
   // Valores reais observados: o MESMO texto de insight gerado pela IA
   // (prova de que o cache bateu certinho), só o `created_at` do Postgres

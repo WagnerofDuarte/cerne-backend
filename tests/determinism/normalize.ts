@@ -97,6 +97,24 @@ function isOpaqueAuthEndpoint(url: string): boolean {
   return OPAQUE_AUTH_PATH_SEGMENTS.some((segment) => url.includes(segment));
 }
 
+/**
+ * Achado real (Wagner, T-062, mesma execução dos achados acima): o
+ * `Location` de `export.download.get` (T-055, único redirect dos 23
+ * endpoints) é uma URL assinada do Storage — `.../object/sign/.../raw.json
+ * ?token=<JWT>`. Esse token embute `iat`/`exp` (o link expira) e é
+ * assinado por HMAC, então o token inteiro NUNCA é igual entre duas
+ * gerações, mesmo para o exato mesmo arquivo — por desenho de segurança
+ * de URL assinada, não não-determinismo do projeto. O caminho antes do
+ * `?` (bucket/usuário/job/arquivo) continua útil de comparar — só a
+ * query string (o token em si) vira opaca.
+ */
+function stripSignedUrlToken(headerName: string, value: string): string {
+  if (headerName.toLowerCase() !== "location") return value;
+  const queryStart = value.indexOf("?token=");
+  if (queryStart === -1) return value;
+  return `${value.slice(0, queryStart)}?token=<url-assinada-sempre-nova>`;
+}
+
 class PositionalNormalizer {
   private readonly uuidPlaceholders = new Map<string, string>();
   private readonly tsPlaceholders = new Map<string, string>();
@@ -151,7 +169,8 @@ export function buildTranscript(
         const sortedHeaders = [...res.headers].sort((a, b) => a.name.localeCompare(b.name));
         for (const header of sortedHeaders) {
           if (VOLATILE_HEADERS.has(header.name.toLowerCase())) continue;
-          lines.push(`header ${header.name.toLowerCase()}: ${normalizer.normalize(header.value)}`);
+          const value = stripSignedUrlToken(header.name, header.value);
+          lines.push(`header ${header.name.toLowerCase()}: ${normalizer.normalize(value)}`);
         }
         if (isOpaqueAuthEndpoint(call.request.url)) {
           // Achado real (Wagner, T-062, 1ª execução completa contra o
