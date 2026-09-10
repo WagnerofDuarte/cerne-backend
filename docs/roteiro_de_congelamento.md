@@ -329,3 +329,22 @@ backend.
 Ainda em aberto: verificar item "todos os estados de tela sustentados por
 algum endpoint" do checklist final, agora que `Requisitos_e_Fluxo_de_
 Telas_TCC.md` está disponível — não feito ainda.
+
+## Nova pendência do protótipo — aberta no mesmo dia (10/09/2026)
+
+Poucas horas depois do congelamento acima, foi decidido acrescentar um
+botão explícito **"Novo Chat"** à Tela 3 (Menu Lateral) — motivo e análise
+de risco em `Contexto Geral.md` Seção 2.1. Isso **reabre** o item
+"Protótipo" do checklist final (`big-plan.md`) até que:
+
+1. A mudança seja aplicada em `ux/Cerne - Prototipo Final.html` via
+   Claude Design (prompt já preparado, ver `Contexto Geral.md` Seção 2.1
+   ou o histórico de conversa que gerou esta pendência).
+2. O SHA-256/tamanho/data em `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13
+   sejam recalculados (`sha256sum "ux/Cerne - Prototipo Final.html"`) e
+   re-registrados — a Seção 13.1 desse arquivo documenta a pendência em
+   detalhe.
+
+**Sem impacto no backend:** `POST /chat/sessions` já suportava múltiplas
+sessões por usuário sem restrição — nenhum endpoint, contrato ou migração
+muda por causa disso.

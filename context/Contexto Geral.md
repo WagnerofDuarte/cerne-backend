@@ -38,6 +38,18 @@ O app **Cerne** — um diário reflexivo com IA — é o **veículo experimental
 - **Nenhuma linha de código de implementação foi escrita ainda** — nem migrações, nem endpoints.
 - Meta de congelamento do backend: **23/09/2026**.
 
+### 2.1 Revisão pós-congelamento do protótipo (10/09/2026)
+
+**Atualização de contexto:** a linha 36 acima ("protótipo congelado, com hash referenciado na Seção 8 do plano de backend") descrevia a decisão de arquitetura como fechada, mas o arquivo real do protótipo (`ux/Cerne - Prototipo Final.html`) e o documento de requisitos (`ux/Requisitos_e_Fluxo_de_Telas_TCC.md`) só entraram de fato neste repositório em **10/09/2026**, quando o hash SHA-256 concreto foi calculado e registrado (`ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13 — `fa4e0bb9...50e5876`, 3.603.106 bytes, `2026-09-10T22:38:11Z`) e o item correspondente do checklist final marcado `[x]` em `big-plan.md`. É **esse** congelamento concreto, não o de 31/08, que a revisão abaixo reabre.
+
+Decisão registrada **depois** desse congelamento concreto e **antes** do início de qualquer ciclo comparativo (que só começam após o congelamento do backend em 23/09 — ver Seção 18) — portanto sem risco de assimetria entre Ciclo A e Ciclo B, mas com uma pendência formal em aberto:
+
+- **Mudança:** adicionar à Tela 3 (Menu Lateral) um botão explícito **"Novo Chat"**, ausente na versão do protótipo cujo hash está registrado hoje.
+- **Motivo:** o fluxo descrito não dá ao usuário nenhum meio explícito de iniciar um novo assunto de conversa — a criação de sessão só acontece implicitamente ao enviar a 1ª mensagem (ver Seção 12.3). Esse comportamento implícito **continua existindo** para o caso em que o usuário simplesmente digita na Home sem passar pelo botão; o botão é um segundo caminho para o mesmo endpoint, não uma substituição.
+- **Impacto no backend: nenhum.** `POST /chat/sessions` (`chat.sessions.create`) já existia, já não tinha restrição de uma sessão por usuário, e já não faz parte dos 5 endpoints de fault injection da D6. Nenhuma mudança de contrato, schema ou migração é necessária.
+- **Pendência formal, já anotada em `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13, `big-plan.md` (checklist final) e `docs/roteiro_de_congelamento.md`:** assim que o botão for aplicado no Claude Design, o SHA-256 acima **deixa de ser válido** — precisa ser recalculado (`sha256sum "ux/Cerne - Prototipo Final.html"`) e re-registrado, e o item "Protótipo congelado" do checklist final volta a ser tratado como **reaberto**, não concluído, até isso acontecer.
+- **Ameaças à validade:** ver nota adicionada à Seção 24 (Circularidade do RNF08).
+
 ---
 
 ## 3. O produto: Cerne (visão funcional)
@@ -115,7 +127,7 @@ Mantêm a "essência" do fluxo original e existem no protótipo, mas **não rece
 | **0.1 — Cofre de Autenticação** | Barreira biométrica/PIN antes do acesso | RF03 |
 | **1 — Home (Chat)** | Tela principal, conversa contínua, botão "+" para entrada multimodal, botão "salvar no diário" por mensagem | RF04, RF08, RF10, RNF01, RNF09 |
 | **2 — Modal de Inserção** | Overlay: texto bruto, microfone, galeria/câmera. Toda captura cria entrada, nunca mensagem de chat | RF01, RF02 |
-| **3 — Menu Lateral** | Hub de navegação, histórico de sessões | Navegação pura |
+| **3 — Menu Lateral** | Hub de navegação, histórico de sessões, botão "Novo Chat" (abre a Home em estado vazio; cria sessão nova ao enviar a 1ª mensagem — ver Seção 2.1) | Navegação pura + RF04 (via botão "Novo Chat") |
 | **4 — Meus Registros** | Timeline consolidada, filtros, tags manuais, exportação | RF07, RF06, RF05 |
 | **5 — Planos de Ação** | Kanban estático (extensão — sem lógica funcional em nenhum ciclo) | Extensão de produto |
 | **6 — Configurações e Perfil** | Dashboard de evolução, seletor de persona, apagar conta | RF09, RNF05 |
@@ -125,6 +137,7 @@ flowchart TD
     T0["Splash"] --> T01["Cofre de Autenticação · RF03"] --> T1["Home/Chat · RF04,RF08,RF10"]
     T1 --> T2["Modal de Inserção · RF01,RF02"]
     T1 --> T3["Menu Lateral"]
+    T3 -->|Novo Chat| T1
     T3 --> T4["Meus Registros · RF05,RF06,RF07"]
     T3 --> T5["Planos de Ação (extensão)"]
     T3 --> T6["Configurações · RF09,RNF05"]
@@ -256,7 +269,7 @@ Cadastro e Login (nativos do Supabase/GoTrue) · Renovar sessão (disparado pela
 **Não existem** endpoints de editar/apagar entrada nem endpoints de etiqueta.
 
 ### 12.3 Chat — 6
-Criar conversa (chamado **implicitamente** ao enviar a 1ª mensagem — não há botão "nova conversa") · Listar conversas · Listar mensagens · Enviar mensagem (streaming SSE, formato fixo D12) · Regenerar resposta (retry da D15 — acerta o cache) · Gerar insight (se falhar: **sucesso 200** com status marcado como falhado — nunca erro HTTP, para não quebrar o chat).
+Criar conversa (chamado ao enviar a 1ª mensagem de uma conversa nova; a partir de 10/09/2026 também acionável explicitamente pelo botão "Novo Chat" no Menu Lateral, que leva à Home em estado vazio — ver Seção 2.1) · Listar conversas · Listar mensagens · Enviar mensagem (streaming SSE, formato fixo D12) · Regenerar resposta (retry da D15 — acerta o cache) · Gerar insight (se falhar: **sucesso 200** com status marcado como falhado — nunca erro HTTP, para não quebrar o chat).
 
 ### 12.4 Exportação — 3
 Solicitar exportação (recebe período do filtro ativo; sem entradas → erro **imediato**, sem criar job — contagem é feita na hora, não dentro do job) · Consultar status (devolve os dois status + campo já resolvido "download disponível") · Baixar (redireciona para o arquivo; escolhe PDF se existir, senão bruto).
@@ -436,8 +449,8 @@ Nenhum ciclo comparativo começa antes de **todos** os itens abaixo estarem verd
 - [ ] Lista dos 5 endpoints de escrita confirmada e congelada
 
 **Protótipo**
-- [ ] Congelado, com hash registrado no documento de requisitos
-- [ ] Todos os estados de tela sustentados por algum endpoint
+- [ ] Congelado, com hash registrado no documento de requisitos — ⚠️ **reaberto em 10/09/2026** pela adição do botão "Novo Chat" à Tela 3 (ver Seção 2.1); hash precisa ser recalculado após a nova versão sair do Claude Design
+- [ ] Todos os estados de tela sustentados por algum endpoint — já satisfeito para o novo botão: reutiliza `POST /chat/sessions`, sem endpoint novo
 
 **Entrega**
 - [ ] Repositório de entrega publicado, somente leitura
@@ -514,7 +527,7 @@ Os documentos acadêmicos originais do projeto (proposta assinada de 27/03/2026,
 - **Cronograma sem folga.** Mitigado pelo gatilho de corte do RF05 em 09/09 — mas não há gatilho equivalente definido para os próprios ciclos de desenvolvimento (Spec Kit / BMAD-METHOD), caso um deles ultrapasse o previsto.
 - **Determinismo residual durante a construção.** No modo de reprodução simples (não estrita), chamadas fora do roteiro não são replicadas entre ciclos — intencional, mas precisa aparecer em "Ameaças à Validade": só a execução final é integralmente determinística.
 - **Pausa de ambiente por inatividade.** O ambiente do ciclo B ficará semanas parado; reconferir a estrutura antes de liberá-lo é obrigatório (D14).
-- **Circularidade do RNF08.** A métrica de fidelidade visual depende do protótipo, e a qualidade do protótipo depende do prompt que o gerou — sem mitigação concreta registrada nas 18 decisões.
+- **Circularidade do RNF08.** A métrica de fidelidade visual depende do protótipo, e a qualidade do protótipo depende do prompt que o gerou — sem mitigação concreta registrada nas 18 decisões. **Agravante registrado em 10/09/2026:** o protótipo recebeu uma revisão manual pós-congelamento (botão "Novo Chat" na Tela 3, ver Seção 2.1), fora do prompt de geração original — mencionar explicitamente como evento de revisão na seção "Ameaças à Validade" da monografia, com a data e o motivo.
 
 ---
 

@@ -122,7 +122,7 @@ Identidade minimalista, paleta acolhedora e neutra, tipografia sans-serif legív
  
 **Tela 2 — Modal de Inserção:** overlay com três formas de captura — campo de texto bruto, microfone (áudio) e galeria/câmera (foto) — com indicador de transcrição. Toda captura aqui cria uma entrada persistida, nunca uma mensagem de chat. *Conecta a: RF01, RF02.*
  
-**Tela 3 — Menu Lateral (Sidebar):** hub de navegação, histórico de sessões, acesso a Meus Registros/Planos de Ação/Configurações. *Navegação pura, sem requisito dedicado.*
+**Tela 3 — Menu Lateral (Sidebar):** hub de navegação, histórico de sessões, acesso a Meus Registros/Planos de Ação/Configurações. Deverá ganhar um botão "Novo Chat" (pendência aberta em 10/09/2026, ver Seção 13.1) que leva à Tela 1 em estado vazio. *Conecta a: RF04 (via botão "Novo Chat"); demais itens são navegação pura.*
  
 **Tela 4 — Meus Registros:** timeline consolidada, filtros, tags manuais, exportação. *Conecta a: RF07, RF06, RF05; extensão de categorização.*
  
@@ -244,6 +244,7 @@ flowchart TD
     subgraph T3["Tela 3 — Menu lateral"]
         direction TB
         E10["GET /chat/sessions"]
+        E10b["Botão 'Novo Chat' — pendência 10/09/2026, ver §13.1; leva a T1 vazia, sustentado por E04"]
     end
  
     subgraph T4["Tela 4 — Meus registros · RF05, RF06, RF07"]
@@ -272,6 +273,7 @@ flowchart TD
     T0 --> T01 --> T1
     T1 --> T2
     T1 --> T3
+    T3 -->|Novo Chat| T1
     T3 --> T4
     T3 --> T5
     T3 --> T6
@@ -414,6 +416,14 @@ reproduzir o mesmo valor acima. Se não bater, o protótipo foi alterado
 depois do congelamento — parar e reportar antes de prosseguir com
 qualquer um dos dois ciclos comparativos (armadilha do apêndice do
 `big-plan.md`: nenhuma referência congelada muda depois do congelamento).
+
+### 13.1 Pendência aberta em 10/09/2026 — botão "Novo Chat"
+
+**O hash acima está prestes a ficar obsoleto por decisão de produto, não por edição acidental.** Foi decidido acrescentar à Tela 3 — Menu Lateral (ver Seção 5/7) um botão explícito **"Novo Chat"** — hoje o fluxo não tem nenhum meio explícito de iniciar um novo assunto de conversa, só a criação implícita de sessão na 1ª mensagem (RF04). Detalhe completo e justificativa em `Contexto Geral.md` Seção 2.1.
+
+- A mudança será aplicada no Claude Design sobre este mesmo arquivo (`ux/Cerne - Prototipo Final.html`), não numa peça nova.
+- **Nenhum endpoint muda** — `POST /chat/sessions` já suporta múltiplas sessões por usuário sem restrição.
+- Assim que a nova versão do protótipo for recebida, **este §13 precisa ser atualizado com o novo SHA-256/tamanho/data**, e o item "Protótipo congelado" do checklist final (`big-plan.md`) volta a ficar reaberto até essa atualização acontecer. Até lá, o hash registrado acima ainda descreve fielmente o arquivo atual — a inconsistência é apenas com a decisão de produto, não com o arquivo em si.
 
 ---
 
