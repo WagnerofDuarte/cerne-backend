@@ -42,6 +42,15 @@ insert into experiment.worker_config (functions_base_url, shared_secret)
 values ('http://host.docker.internal:54321/functions/v1', '<o mesmo valor de EXPORT_WORKER_SECRET no .env.local>');
 ```
 
+Sem `psql`/Studio à mão (achado real, Wagner, macOS — o Mac não vem com o
+cliente `psql` instalado por padrão), o mesmo INSERT/UPDATE (idempotente)
+via `deno`, sem precisar de nenhum binário extra:
+
+```bash
+EXPORT_WORKER_SECRET='<o mesmo valor do .env.local>' \
+  deno run --allow-net --allow-env scripts/configure-worker.ts
+```
+
 `EXPORT_WORKER_SECRET` é uma variável nova (migração 0019) — precisa estar
 em `supabase/.env.local` (qualquer string, escolhida por você; só precisa
 ser a MESMA usada nesse INSERT) antes de rodar `supabase functions serve`.
