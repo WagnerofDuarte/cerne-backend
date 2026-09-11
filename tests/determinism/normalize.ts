@@ -97,6 +97,54 @@ function isOpaqueAuthEndpoint(url: string): boolean {
   return OPAQUE_AUTH_PATH_SEGMENTS.some((segment) => url.includes(segment));
 }
 
+const EXPORT_STATUS_PATH_SEGMENT = "/export-status-get/";
+
+/** Únicos estados de `export_jobs.status` que este teste garante estáveis — os intermediários (`pending`/`processing`) não são. */
+const TERMINAL_EXPORT_STATUSES = new Set(["done", "error"]);
+
+function isExportStatusEndpoint(url: string): boolean {
+  return url.includes(EXPORT_STATUS_PATH_SEGMENT);
+}
+
+/**
+ * Achado real (Wagner, 11/09/2026, 1ª execução real do job `determinism`
+ * no GitHub Actions após o congelamento da Fase 7): o roteiro faz polling
+ * de `GET /export-status-get/:jobId` (`[Options] retry`/`retry-interval`
+ * do Hurl) até `status == "done"`. Cada tentativa intermediária captura o
+ * estado do job NAQUELE instante — que depende de quando o `pg_cron`
+ * acorda em relógio de parede real, nunca sincronizado com o teste. Duas
+ * execuções podem legitimamente pegar `pending` numa tentativa em que a
+ * outra já pegou `processing` (foi exatamente isso que derrubou a 1ª
+ * comparação real: mesmo `jobId`, mesma posição no transcript, só o
+ * `status` divergindo) — não é não-determinismo do backend, as duas
+ * terminam em `done`. Mesma categoria de um achado já registrado na Fase
+ * 5 (o NÚMERO de tentativas pode variar entre execuções, "comportamento
+ * esperado, não um problema") — esta é a versão mais estrita: também o
+ * CONTEÚDO de uma tentativa no meio do caminho pode variar.
+ *
+ * Solução: qualquer resposta de `export-status-get` cujo `status` não seja
+ * terminal (`done`/`error`) é excluída INTEIRA do transcript (nem a linha
+ * de status/headers entra) — não só o corpo. Isso resolve as duas faces
+ * do mesmo problema de uma vez: conteúdo intermediário divergente E
+ * número de tentativas divergente (se uma execução precisar de 3
+ * tentativas e a outra de 5, as intermediárias somem das duas, e só o
+ * `done` final — que é o que o roteiro de fato garante via `[Asserts]` —
+ * entra na comparação).
+ */
+function isNonTerminalExportStatusResponse(url: string, body: string): boolean {
+  if (!isExportStatusEndpoint(url)) return false;
+  try {
+    const parsed = JSON.parse(body);
+    const status = parsed?.data?.status;
+    return !(typeof status === "string" && TERMINAL_EXPORT_STATUSES.has(status));
+  } catch {
+    // corpo ilegível como JSON — não é o formato esperado de resposta de
+    // status; deixa cair no comportamento padrão (comparado normalmente),
+    // mais seguro que ocultar algo que pode ser um erro real.
+    return false;
+  }
+}
+
 /**
  * Achado real (Wagner, T-062, mesma execução dos achados acima): o
  * `Location` de `export.download.get` (T-055, único redirect dos 23
@@ -159,13 +207,34 @@ export function buildTranscript(
 ): string {
   const normalizer = new PositionalNormalizer();
   const lines: string[] = [];
+  // Posição de SAÍDA — não o `entry.index` bruto do Hurl. Necessário desde
+  // o achado do export-status-get (acima): se uma execução precisar de
+  // menos tentativas intermediárias que a outra antes das excluirmos,
+  // tudo que vem DEPOIS ainda teria um `entry.index` bruto diferente
+  // entre as duas execuções, mesmo idêntico em conteúdo — um contador que
+  // só avança para o que de fato entra no transcript é imune a isso.
+  let outputPosition = 0;
 
   for (const report of reports) {
     const sortedEntries = [...report.entries].sort((a, b) => a.index - b.index);
     for (const entry of sortedEntries) {
       for (const call of entry.calls) {
         const res = call.response;
-        lines.push(`=== entry ${entry.index} status=${res.status} ===`);
+
+        let body: string;
+        try {
+          body = readBody(res.body);
+        } catch (err) {
+          body = `<corpo ilegível: ${err instanceof Error ? err.message : err}>`;
+        }
+
+        if (isNonTerminalExportStatusResponse(call.request.url, body)) {
+          // Poll intermediário de export-status-get (pending/processing) —
+          // excluído inteiro do transcript, ver comentário da função acima.
+          continue;
+        }
+
+        lines.push(`=== entry ${outputPosition++} status=${res.status} ===`);
         const sortedHeaders = [...res.headers].sort((a, b) => a.name.localeCompare(b.name));
         for (const header of sortedHeaders) {
           if (VOLATILE_HEADERS.has(header.name.toLowerCase())) continue;
@@ -186,12 +255,6 @@ export function buildTranscript(
             "<corpo de auth GoTrue — sessão/token sempre novos por design, não comparado>",
           );
           continue;
-        }
-        let body: string;
-        try {
-          body = readBody(res.body);
-        } catch (err) {
-          body = `<corpo ilegível: ${err instanceof Error ? err.message : err}>`;
         }
         lines.push(normalizer.normalize(body));
       }
