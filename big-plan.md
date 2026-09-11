@@ -650,7 +650,7 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
   4. ✅ `supabase test db` nos três — 100% verde
   5. ✅ Suíte Hurl completa contra `ciclo-a` e `ciclo-b`
   6. ✅ Executar o roteiro em `record` **no `ciclo-a` apenas**; exportar o cache; importar o mesmo cache no `ciclo-b` (import ainda pendente)
-  7. Reexecutar o roteiro em `replay_strict` nos dois — zero `REPLAY_MISS`
+  7. ✅ Reexecutar o roteiro em `replay_strict` nos dois — zero `REPLAY_MISS`
   8. Job `determinism` verde
   9. Conferir `fault_injection_log`: os 15 cenários registrados
   10. Montar `docs/handoff/` (ver "Pacote entregue aos dois ciclos" abaixo)
@@ -658,7 +658,13 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
   **Progresso em 10/09/2026 — ferramental dos passos 3 e 10 pronto, ainda sem execução real (mesmo bloqueio de rede/Docker de toda fase anterior):**
   - **Passo 3 (`scripts/schema-hash.ts`, novo):** nenhuma fase anterior comparou estrutura entre ambientes — só `dev` tinha sido tocado até aqui. Conecta direto no Postgres (padrão de `replay-cache-export.ts`), introspecciona só `public`/`experiment` (extensões por allowlist fechada, colunas, RLS, constraints, índices, triggers, funções, políticas, grants de tabela) e produz texto canônico + hash SHA-256. Bônus: falha alto se achar `USING hnsw`/`ivfflat` (regra nº7), não só compara cego. **Validado contra Postgres 16 real neste sandbox** (pgvector 0.6.0/pgtap 1.3.2 via apt, `auth` mockado à mão): duas bases construídas independentemente a partir das migrações 0001–0011 (+ a função de 0012 antes do ponto que precisa de `pg_cron`, indisponível via apt aqui) deram hash **idêntico**; um índice HNSW plantado de propósito foi pego e nomeado exatamente. 10/10 testes unitários novos. Cobertura das migrações que dependem de `pgmq`/`pg_net`/Storage (0013-0014, 0018-0020) fica para a execução real do Wagner, mesma nota de ambiente já registrada em `0014_export_queue.sql`.
   - **Passo 10 (`scripts/gen-handoff-docs.ts` + `scripts/build-handoff-package.sh`, novos):** o primeiro gera de fonte única (nunca à mão) `docs/handoff/taxonomia_erros.md` (de `errors.ts`), `mapa_estados_tela.md` (transcrição do único mapeamento tela↔status que os documentos-fonte definem em detalhe — `export_jobs`/RF05; registra que um mapa completo de todas as telas depende do `Requisitos_e_Fluxo_de_Telas_TCC.md` ausente), `selo_sincronizacao.md` (D9, ancorado nos campos reais `Entry.serverRevision`/`updatedAt`), `politica_defeito_D16.md` e o `README.md` índice. O segundo monta o pacote **completo** (os gerados + `contracts/openapi.yaml`, roteiro, fixtures, coleção Hurl, `bugs_conhecidos.md`) num diretório de destino externo só na hora real de publicar — deliberadamente **não duplicado dentro de `cerne-backend`** (fixtures/media/ sozinho tem ~12MB) — e nunca toca credencial nenhuma (só cria `credenciais/README.md` explicando o preenchimento manual). Testado de ponta a ponta contra um diretório vazio real (35 arquivos corretos) e as 3 guardas de erro; achou e corrigiu um bug real de path (`../..` copiado por engano do padrão de `tests/determinism/run.sh`, que vive um nível mais fundo). 8/8 testes novos.
-  - **Itens 7/8/9 do procedimento** continuam dependentes de execução real. Ficam para o Wagner rodar, seguindo `docs/roteiro_de_congelamento.md`.
+  - **Itens 8/9 do procedimento** continuam dependentes de execução real. Ficam para o Wagner rodar, seguindo `docs/roteiro_de_congelamento.md`.
+
+  **Progresso em 11/09/2026 — passo 7 confirmado, com 1 achado real importante:**
+  - **Achado — reexecutar o roteiro exige "recriar o banco" antes, nos dois ambientes (inclusive `ciclo-a`, que já tinha rodado uma vez no passo 6):** o roteiro (Bloco 7) cria entradas de verdade e `seed.sql` é só aditivo (nunca apaga) — sem limpar antes, a reexecução falha a mesma asserção de contagem fixa do passo 6. Sem `db reset` disponível contra um projeto remoto, o equivalente foi truncar as tabelas mutáveis (`entries`, `chat_sessions`, `chat_messages`, `insights`, `export_jobs`) + recarregar o seed, preservando `experiment.ai_replay_cache` em `ciclo-a` (é a gravação original) e truncando-o em `ciclo-b` antes de importar (evita precisar de `--force`, o resquício do teste isolado do `retry_chat.hurl` no passo 5 não fazia falta). Backfill dos embeddings reaproveitou o cache dos dois lados, **0 chamadas novas à Voyage**.
+  - **`ciclo-a` replay_strict:** `Success`, 30 requisições, zero `REPLAY_MISS`.
+  - **`ciclo-b` replay_strict** (cache importado de `ciclo-a`, 63 entradas): `Success`, 29 requisições, zero `REPLAY_MISS` — **zero chamada real à IA em `ciclo-b` do início ao fim**, reproduzindo exatamente a gravação de `ciclo-a`. Prova central do experimento inteiro confirmada de ponta a ponta contra infraestrutura real.
+  - Diferença de 1 requisição entre os dois é esperada (retries de polling assíncrono do worker de exportação, já documentado desde a Fase 5) — não indica não-determinismo.
 
   **Progresso em 11/09/2026 — passo 6 confirmado, com 1 achado real importante:**
   - **Achado — o Passo 5 (suíte Hurl completa) suja a conta A do seed:** vários arquivos criam entradas de verdade em `cenario-cheio@cerne.test` (`entries_create.hurl`, `idempotencia_rf10.hurl`) — o roteiro assume 34 entradas fixas, e a 1ª tentativa falhou com `dashboard-aggregate-get` retornando `totals.count=36`. Diagnosticado por leitura direta (2 entradas extras, ambas claramente artefatos de teste pelo próprio conteúdo, `created_at` de hoje) e removidas por id explícito — todas as 34 do seed compartilham o prefixo `a0000000-0000-0000-0004-`, o que tornou a identificação segura. Documentado em `docs/roteiro_de_congelamento.md` como um passo de limpeza obrigatório entre os passos 5 e 6, em qualquer ambiente.
@@ -722,11 +728,11 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 - [x] Formato do streaming validado por teste — `sse_ordem.hurl` verde nos dois ambientes (11/09/2026)
 
 **Reprodutibilidade**
-- [ ] Roteiro de validação escrito e revisado
-- [ ] Cache populado; reexecução estrita sem "não encontrado"
-- [ ] Teste de determinismo passando (2 execuções idênticas)
-- [ ] Modelo de embedding fixado, sem chamada sem versão explícita
-- [ ] Nenhum índice vetorial aproximado; toda ordenação com desempate
+- [x] Roteiro de validação escrito e revisado — aprovado pelo Wagner na Fase 6
+- [x] Cache populado; reexecução estrita sem "não encontrado" — confirmado 11/09/2026 em `ciclo-a` e `ciclo-b`, zero `REPLAY_MISS` nos dois
+- [ ] Teste de determinismo passando (2 execuções idênticas) — job `determinism` do CI, já verde desde a Fase 6; falta reconfirmar no passo 8
+- [x] Modelo de embedding fixado, sem chamada sem versão explícita — `voyage-4`, 1024 dimensões, desde a Fase 1
+- [x] Nenhum índice vetorial aproximado; toda ordenação com desempate — confirmado pelo guardrail do `schema-hash.ts` nos 3 ambientes (passo 3)
 
 **Tratamento de erro**
 - [ ] Os 15 cenários demonstrados e registrados
