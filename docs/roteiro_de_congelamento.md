@@ -177,23 +177,58 @@ era o último número confirmado).
 
 ## Passo 5 — Suíte Hurl completa contra `ciclo-a` e `ciclo-b`
 
-Mesmo comando de sempre (`tests/hurl/README.md`), só trocando `base_url`
-para o domínio público do projeto:
+⚠️ **Achado real, confirmado rodando contra `ciclo-a`: 3 coisas precisam
+de atenção ANTES de rodar isto, senão 3 arquivos falham (nenhum é bug de
+código):**
+
+1. **"Confirm email" vem ligado por padrão num projeto Supabase novo na
+   nuvem** — `supabase/config.toml` desliga isso (`enable_confirmations =
+   false`) só para o stack local; não é aplicado a `ciclo-a`/`ciclo-b`
+   por nenhum `db push`/`functions deploy`. Sem desligar, `auth-signup`
+   não libera sessão (sintoma: `account_delete.hurl` falha com `401` em
+   vez de `200` no signup). **Desligar manualmente**: painel do projeto →
+   Authentication → Providers → Email → desligar "Confirm email".
+2. **`media_ocr.hurl` precisa de 3 variáveis, não 1** — o bloco de
+   `ci.yml`/`tests/determinism` (uma variável, `ocr_image_base64`) é de
+   OUTRO arquivo. Para `tests/hurl/media_ocr.hurl`, gerar assim (bloco
+   correto, já documentado em `tests/hurl/README.md`):
+   ```bash
+   {
+     printf 'image_base64='; base64 < fixtures/media/ocr_fixture_01.png | tr -d '\n'; echo
+     printf 'image_base64_illegible='; base64 < fixtures/media/ocr_fixture_ilegivel.png | tr -d '\n'; echo
+     printf 'image_base64_oversized='; head -c 6000000 /dev/urandom | base64 | tr -d '\n'; echo
+   } > /tmp/hurl-ocr-vars.properties
+   ```
+3. **`tests/hurl/retry_chat.hurl` não entra no `*.hurl` (roda sozinho)**
+   — ele mesmo documenta isso no topo do arquivo: só passa com
+   `REPLAY_MODE=record`/`replay`, e em `REPLAY_MODE=off` (o padrão)
+   nunca bate `X-Replay-Status: hit`. Mesmo padrão usado em toda fase
+   anterior — nunca foi bundlado com o resto.
 
 ```bash
 hurl --test --jobs 1 \
   --variable base_url=https://<ref-do-ciclo>.supabase.co/functions/v1 \
   --variable test_account_password='Cerne-Teste-2026!' \
   --variable test_fault_key='<TEST_FAULT_KEY configurado no passo 0.1>' \
-  --variables-file /tmp/determinism-ocr-vars.properties \
-  tests/hurl/*.hurl
+  --variables-file /tmp/hurl-ocr-vars.properties \
+  $(ls tests/hurl/*.hurl | grep -v retry_chat.hurl)
 ```
-(o arquivo de variáveis da fixture de OCR pode ser gerado como em
-`ci.yml`: `{ printf 'ocr_image_base64='; base64 < fixtures/media/ocr_fixture_01.png | tr -d '\n'; echo; } > /tmp/determinism-ocr-vars.properties`)
 
-Repetir para `ciclo-b`. **Esperado:** `Success` nos dois, mesmo total de
-requisições já visto contra `dev` na Fase 5 (26 arquivos, ajustado pelos
-retries do worker assíncrono).
+Depois, `retry_chat.hurl` sozinho (pode deixar `REPLAY_MODE=record`
+configurado a partir daqui — o passo 6 já precisa dele assim mesmo em
+`ciclo-a`; para `ciclo-b`, lembrar de setar de volta antes do passo 7,
+que já faz isso de qualquer forma):
+```bash
+supabase secrets set --project-ref <ref-do-ciclo> REPLAY_MODE=record
+
+hurl --test --jobs 1 \
+  --variable base_url=https://<ref-do-ciclo>.supabase.co/functions/v1 \
+  --variable test_account_password='Cerne-Teste-2026!' \
+  tests/hurl/retry_chat.hurl
+```
+
+Repetir tudo para `ciclo-b`. **Esperado:** `Success` em todos os arquivos
+nos dois ambientes.
 
 ---
 
