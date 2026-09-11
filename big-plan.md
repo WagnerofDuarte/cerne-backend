@@ -407,7 +407,8 @@ Com isso, `T-034`–`T-041` estão marcados `[x]` acima.
 - [x] `T-042` Módulo `prompts` — toda montagem de prompt acontece no servidor (D5), versionado por `PROMPT_VERSION` — **Critério:** `PROMPT_VERSION` entra na `cache_key`.
 - [x] `T-043` Módulo `rag` com ordenação determinística (top 5) — **Critério:** mesma pergunta produz sempre os mesmos `retrievedEntryIds`, na mesma ordem.
 - [x] `T-044` Módulo `sse` no formato fixo da D12 (`message_created` → `context` → `token*` → `done`/`error`) — **Critério:** `sse_ordem.hurl` verde. ✅ Confirmado pelo Wagner em 14/09/2026 — `sse_ordem.hurl` passou (5 requisições) contra `supabase functions serve` real, 1ª vez que este projeto testa uma resposta `text/event-stream` via Hurl e não achou nenhum problema de execução.
-- [x] `T-045` `POST /chat/sessions` (título gerado no servidor, persona congelada) + os dois `GET` de listagem — **Critério:** criação implícita na 1ª mensagem funciona (não há botão "nova conversa"). ✅ Confirmado — `chat_sessions.hurl` verde (9 requisições).
+- [x] `T-045` `POST /chat/sessions` (título gerado no servidor, persona congelada) + os dois `GET` de listagem — **Critério original:** criação implícita na 1ª mensagem funciona (não há botão "nova conversa"). ✅ Confirmado — `chat_sessions.hurl` verde (9 requisições).
+  - **Adendo de 10/09/2026 (não reabre T-045, não invalida a evidência acima):** o protótipo passou a ter um botão "Novo Chat" no Menu Lateral (`Contexto Geral.md` Seção 2.1). O endpoint em si não mudou — sem restrição de uma sessão por usuário, ele já suportava esse uso; a criação continua acontecendo implicitamente na 1ª mensagem, só que agora também pode ser precedida por esse atalho de UX. Critério de aceite original permanece válido como estava; a frase "não há botão" descreve o protótipo até 31/08, não o estado atual.
 - [x] `T-046` `POST .../messages` com streaming completo (grava mensagem do usuário → RAG → cria mensagem do assistente `streaming` → emite eventos → grava tokens → `done`/`error`) — **Critério:** queda no meio do streaming preserva o texto parcial com `status='failed'`. ✅ Confirmado via `sse_ordem.hurl` (caminho feliz completo, real chamada ao Sonnet 5).
 - [x] `T-047` Reemissão de SSE a partir do cache (hit reemite em pedaços de 32 caracteres a cada 15ms) — **Critério:** hit produz exatamente a mesma sequência de eventos.
 - [x] `T-048` `POST .../messages/:userMessageId/retry` (D15 — mesmo histórico e pergunta, mesma impressão digital) — **Critério:** `retry_chat.hurl` verde — `X-Replay-Status: hit` e `retry_count=1`. ✅ Confirmado pelo Wagner em 14/09/2026 — `retry_chat.hurl` verde (8 requisições) com `REPLAY_MODE=record`, comprovando a mecânica da D15 de ponta a ponta (retry acerta o cache da 1ª tentativa).
@@ -643,20 +644,80 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 **Prazo: 23/09/2026**
 
 - [ ] `T-064` Procedimento de congelamento (Seção 12 do plano técnico), passos 1–10:
-  1. `supabase db reset` no `dev` — confirmar que migrações + seed rodam do zero
-  2. Aplicar migrações em `ciclo-a` e `ciclo-b`
-  3. Gerar hash do schema dos três ambientes — **confirmar que são idênticos**
-  4. `supabase test db` nos três — 100% verde
-  5. Suíte Hurl completa contra `ciclo-a` e `ciclo-b`
-  6. Executar o roteiro em `record` **no `ciclo-a` apenas**; exportar o cache; **importar o mesmo cache no `ciclo-b`**
-  7. Reexecutar o roteiro em `replay_strict` nos dois — zero `REPLAY_MISS`
-  8. Job `determinism` verde
-  9. Conferir `fault_injection_log`: os 15 cenários registrados
+  1. ✅ `supabase db reset` no `dev` — confirmar que migrações + seed rodam do zero
+  2. ✅ Aplicar migrações em `ciclo-a` e `ciclo-b`
+  3. ✅ Gerar hash do schema dos três ambientes — **confirmar que são idênticos**
+  4. ✅ `supabase test db` nos três — 100% verde
+  5. ✅ Suíte Hurl completa contra `ciclo-a` e `ciclo-b`
+  6. ✅ Executar o roteiro em `record` **no `ciclo-a` apenas**; exportar o cache; importar o mesmo cache no `ciclo-b` (import ainda pendente)
+  7. ✅ Reexecutar o roteiro em `replay_strict` nos dois — zero `REPLAY_MISS`
+  8. ✅ Job `determinism` verde
+  9. ✅ Conferir `fault_injection_log`: os 15 cenários registrados
   10. Montar `docs/handoff/` (ver "Pacote entregue aos dois ciclos" abaixo)
+
+  **Progresso em 10/09/2026 — ferramental dos passos 3 e 10 pronto, ainda sem execução real (mesmo bloqueio de rede/Docker de toda fase anterior):**
+  - **Passo 3 (`scripts/schema-hash.ts`, novo):** nenhuma fase anterior comparou estrutura entre ambientes — só `dev` tinha sido tocado até aqui. Conecta direto no Postgres (padrão de `replay-cache-export.ts`), introspecciona só `public`/`experiment` (extensões por allowlist fechada, colunas, RLS, constraints, índices, triggers, funções, políticas, grants de tabela) e produz texto canônico + hash SHA-256. Bônus: falha alto se achar `USING hnsw`/`ivfflat` (regra nº7), não só compara cego. **Validado contra Postgres 16 real neste sandbox** (pgvector 0.6.0/pgtap 1.3.2 via apt, `auth` mockado à mão): duas bases construídas independentemente a partir das migrações 0001–0011 (+ a função de 0012 antes do ponto que precisa de `pg_cron`, indisponível via apt aqui) deram hash **idêntico**; um índice HNSW plantado de propósito foi pego e nomeado exatamente. 10/10 testes unitários novos. Cobertura das migrações que dependem de `pgmq`/`pg_net`/Storage (0013-0014, 0018-0020) fica para a execução real do Wagner, mesma nota de ambiente já registrada em `0014_export_queue.sql`.
+  - **Passo 10 (`scripts/gen-handoff-docs.ts` + `scripts/build-handoff-package.sh`, novos):** o primeiro gera de fonte única (nunca à mão) `docs/handoff/taxonomia_erros.md` (de `errors.ts`), `mapa_estados_tela.md` (transcrição do único mapeamento tela↔status que os documentos-fonte definem em detalhe — `export_jobs`/RF05; registra que um mapa completo de todas as telas depende do `Requisitos_e_Fluxo_de_Telas_TCC.md` ausente), `selo_sincronizacao.md` (D9, ancorado nos campos reais `Entry.serverRevision`/`updatedAt`), `politica_defeito_D16.md` e o `README.md` índice. O segundo monta o pacote **completo** (os gerados + `contracts/openapi.yaml`, roteiro, fixtures, coleção Hurl, `bugs_conhecidos.md`) num diretório de destino externo só na hora real de publicar — deliberadamente **não duplicado dentro de `cerne-backend`** (fixtures/media/ sozinho tem ~12MB) — e nunca toca credencial nenhuma (só cria `credenciais/README.md` explicando o preenchimento manual). Testado de ponta a ponta contra um diretório vazio real (35 arquivos corretos) e as 3 guardas de erro; achou e corrigiu um bug real de path (`../..` copiado por engano do padrão de `tests/determinism/run.sh`, que vive um nível mais fundo). 8/8 testes novos.
+  - **Item 9 do procedimento** continua dependente de execução real. Fica para o Wagner rodar, seguindo `docs/roteiro_de_congelamento.md`.
+
+  **Progresso em 11/09/2026 — passo 9 confirmado, sem achados novos —
+  os 9 passos de execução real do procedimento de congelamento estão
+  completos em `ciclo-a` e `ciclo-b`:**
+  - **`ciclo-a`:** `falhas_15.hurl` `Success`, 12/12 requisições
+    (~3 minutos, 5 timeouts de 35s dos cenários `offline`);
+    `verify-fault-injection-log.ts` confirmou os 5 cenários `offline` sem
+    resposta e as **15/15 combinações distintas** registradas em
+    `experiment.fault_injection_log`.
+  - **`ciclo-b`:** resultado idêntico — `Success`, 12/12, 5/5 `offline`
+    confirmados, 15/15 combinações em `experiment.fault_injection_log`.
+  - Marco: primeira vez que os passos 1–9 do procedimento de
+    congelamento (Seção 12 do plano técnico) rodam de ponta a ponta
+    contra infraestrutura real (`ciclo-a`/`ciclo-b`), com todos os
+    achados de ambiente documentados em `docs/roteiro_de_congelamento.md`.
+    Falta só o passo 10 (montagem do pacote de handoff) e o `T-065`/`GATE-11`.
+
+  **Progresso em 11/09/2026 — passo 8 confirmado, com 1 achado real importante:**
+  - **Achado — `export-status-get` (polling assíncrono) pode divergir entre execuções sem ser bug real:** 1ª tentativa do job `determinism` no GitHub Actions após o congelamento falhou de verdade — mesmo `jobId`, mesma posição no transcript, execução 1 pegou `"status":"processing"` onde a execução 2 ainda tinha `"pending"`. Causa: o `pg_cron` acorda em relógio de parede real, nunca sincronizado com o teste; as duas terminam em `"done"` (o que o roteiro de fato garante via `[Asserts]`), só uma tentativa intermediária no meio do caminho capturou o job em instantes ligeiramente diferentes. Mesma categoria de um achado já aceito desde a Fase 5 (o número de tentativas pode variar) — versão mais estrita, o conteúdo de uma tentativa também pode variar.
+  - **Corrigido em `tests/determinism/normalize.ts`:** qualquer resposta de `export-status-get` cujo status não seja terminal (`done`/`error`) é excluída inteira do transcript (não só o corpo) — resolve conteúdo intermediário divergente E número de tentativas divergente ao mesmo tempo. Precisou trocar o índice bruto do Hurl por um contador de posição de saída no transcript (achado ao escrever o teste do 2º caso). 3 testes novos, 14/14 em `normalize.test.ts`, 416/416 no repo inteiro.
+  - **✅ Confirmado no GitHub Actions real, run disparado manualmente no branch `fase7`, commit `07ad833`:** jobs `contracts` e `determinism` verdes — `✅ IDÊNTICO — as duas execuções de roteiro_validacao.hurl produziram o mesmo resultado (438 linhas normalizadas)`.
+
+  **Progresso em 11/09/2026 — passo 7 confirmado, com 1 achado real importante:**
+  - **Achado — reexecutar o roteiro exige "recriar o banco" antes, nos dois ambientes (inclusive `ciclo-a`, que já tinha rodado uma vez no passo 6):** o roteiro (Bloco 7) cria entradas de verdade e `seed.sql` é só aditivo (nunca apaga) — sem limpar antes, a reexecução falha a mesma asserção de contagem fixa do passo 6. Sem `db reset` disponível contra um projeto remoto, o equivalente foi truncar as tabelas mutáveis (`entries`, `chat_sessions`, `chat_messages`, `insights`, `export_jobs`) + recarregar o seed, preservando `experiment.ai_replay_cache` em `ciclo-a` (é a gravação original) e truncando-o em `ciclo-b` antes de importar (evita precisar de `--force`, o resquício do teste isolado do `retry_chat.hurl` no passo 5 não fazia falta). Backfill dos embeddings reaproveitou o cache dos dois lados, **0 chamadas novas à Voyage**.
+  - **`ciclo-a` replay_strict:** `Success`, 30 requisições, zero `REPLAY_MISS`.
+  - **`ciclo-b` replay_strict** (cache importado de `ciclo-a`, 63 entradas): `Success`, 29 requisições, zero `REPLAY_MISS` — **zero chamada real à IA em `ciclo-b` do início ao fim**, reproduzindo exatamente a gravação de `ciclo-a`. Prova central do experimento inteiro confirmada de ponta a ponta contra infraestrutura real.
+  - Diferença de 1 requisição entre os dois é esperada (retries de polling assíncrono do worker de exportação, já documentado desde a Fase 5) — não indica não-determinismo.
+
+  **Progresso em 11/09/2026 — passo 6 confirmado, com 1 achado real importante:**
+  - **Achado — o Passo 5 (suíte Hurl completa) suja a conta A do seed:** vários arquivos criam entradas de verdade em `cenario-cheio@cerne.test` (`entries_create.hurl`, `idempotencia_rf10.hurl`) — o roteiro assume 34 entradas fixas, e a 1ª tentativa falhou com `dashboard-aggregate-get` retornando `totals.count=36`. Diagnosticado por leitura direta (2 entradas extras, ambas claramente artefatos de teste pelo próprio conteúdo, `created_at` de hoje) e removidas por id explícito — todas as 34 do seed compartilham o prefixo `a0000000-0000-0000-0004-`, o que tornou a identificação segura. Documentado em `docs/roteiro_de_congelamento.md` como um passo de limpeza obrigatório entre os passos 5 e 6, em qualquer ambiente.
+  - **Confirmado também:** `supabase secrets set` novo já vale sem precisar de `functions deploy` de novo.
+  - **Roteiro gravado com sucesso em `ciclo-a`** (`REPLAY_MODE=record`): `Success`, 32 requisições. Cache exportado: **63 entradas**, cobrindo as 7 operações de IA (`chat`: 8, `dashboard`: 1, `embedding`: 45, `insight`: 2, `narrative`: 1, `ocr`: 2, `pii`: 4), 15 hits já dentro da própria gravação (retries/buscas repetidas). Esta foi a **única** chamada real à IA de todo o processo de congelamento — a partir daqui, `ciclo-b` só reaproveita.
+
+  **Progresso em 11/09/2026 — passo 5 confirmado, com 4 achados reais de ambiente (todos corrigidos, nenhum bug de código):**
+  - `ciclo-a`: 24/27 arquivos verdes de primeira; 3 falharam por causas de ambiente, todas corrigidas e reexecutadas com sucesso — **27/27 final**.
+  - `ciclo-b`: já com as 4 correções aplicadas de saída — **27/27 de primeira**, nenhum achado novo.
+  - **Achado 1 — "Confirm email" ligado por padrão em projeto Supabase novo na nuvem:** `supabase/config.toml` desliga isso só no stack local (`enable_confirmations = false`); não propaga via `db push`/`functions deploy`. Sem desligar manualmente (Authentication → Providers → Email), `auth-signup` não libera sessão — `account_delete.hurl` falhava com `401` em vez de `200`.
+  - **Achado 2 — `OCR_MAX_BYTES` configurado errado nos dois ambientes:** um valor de exemplo pequeno (`1024`, 1KB) tinha sido usado nos secrets em vez do valor real do plano técnico §3.6 (**`5242880`**, 5MB) — toda imagem virava `413 PAYLOAD_TOO_LARGE`, inclusive o caso que deveria dar `400 OCR_NO_TEXT`. Corrigido nos dois com `supabase secrets set ... OCR_MAX_BYTES=5242880`.
+  - **Achado 3 (não é bug) — `retry_chat.hurl` precisa rodar separado do resto**, com `REPLAY_MODE=record`/`replay` — o próprio arquivo já documentava isso; mesmo padrão usado em toda fase anterior, só não bundlar com `*.hurl`.
+  - **Achado 4 (erro meu) — variável errada no comando de gerar a fixture de OCR:** copiei o bloco de `ci.yml`/`tests/determinism` (1 variável, `ocr_image_base64`) em vez do bloco correto de `tests/hurl/README.md` para `media_ocr.hurl` (3 variáveis: `image_base64`/`_illegible`/`_oversized`).
+  - `REPLAY_MODE` ficou em `record` em `ciclo-a` e `ciclo-b` a partir daqui — necessário de qualquer forma para os passos 6/7.
+
+  **Progresso em 11/09/2026 — passo 4 confirmado:** `supabase test db` rodado nos 3 ambientes pelo Wagner, resultado **idêntico** nos 3: `Files=20, Tests=127, Result: PASS`. Primeira vez que a suíte pgTAP inteira (as 20 verificações, incluindo as 8 de RLS por tabela, `experiment_rpc`, `export_queue`, `export_fault`, etc.) roda contra `ciclo-a`/`ciclo-b` de verdade.
+
+  **Progresso em 11/09/2026 — passos 1/2/3 confirmados de ponta a ponta pelo Wagner, contra a infraestrutura real (primeira vez que `ciclo-a`/`ciclo-b` são tocados neste projeto):**
+  - **Passo 1 (`dev`):** `supabase db reset` local confirmado sem erro.
+  - **Passo 2 (`ciclo-a`/`ciclo-b`):** `supabase functions deploy` publicou as 24 functions nos dois projetos (1ª vez que este projeto roda em produção gerenciada do Supabase, não só local); `supabase db push` aplicou as 20 migrações nos dois **sem nenhum erro** — inclusive as 5 que dependem de `pgmq`/`pg_net`/Storage (0013-0014, 0018-0020), nunca antes exercitadas de verdade (bloqueio de rede deste sandbox impedia isso desde a Fase 5). `seed.sql` carregado via `psql` direto e `backfill-seed-embeddings.ts` confirmados nos dois: 34 entradas na conta A, 33 `embedding_status='ready'` + 1 `failed` (a intencional), 0 falhas reais.
+  - **Passo 3 (`schema-hash.ts`):** rodado contra os 3 ambientes reais pela primeira vez (cobertura completa das 20 migrações, superando a limitação de 11 migrações do sandbox) — **hash idêntico nos 3:** `f33a12b44912ae129a4702bcf7c8fffdcd93d7defad15df2323171cf779868e2` (6 extensões, 91 colunas, 12 tabelas com RLS, 39 constraints, 17 índices, 2 triggers, 14 funções, 32 políticas, 83 grants).
+  - **3 achados reais de ambiente, todos corrigidos em `docs/roteiro_de_congelamento.md` para quem repetir isto depois (ex.: `GATE-12`):**
+    1. `experiment.worker_config` (sub-passo antigo "0.3") só pode ser configurado **depois** das migrações — a versão original do roteiro pedia isso antes, e falhava com `relation "experiment.worker_config" does not exist`. Reordenado.
+    2. "Direct connection" do Supabase falhou com `ENOTFOUND` (host só resolve por IPv6 em projetos novos) — resolvido usando "Session pooler" (`postgres.<ref>@aws-0-<região>.pooler.supabase.com`).
+    3. Senha do banco do Wagner contém um `@` — quebra o formato da connection string (delimitador de URL); resolvido codificando como `%40`.
+    4. `backfill-seed-embeddings.ts` também exige `PROMPT_VERSION` no ambiente (entra na chave do cache de replay, T-062) — não estava documentado no roteiro original.
+  - **Pendência levantada nesta sessão, resolvida em 10/09/2026:** o item "protótipo congelado, com hash registrado no documento de requisitos" do checklist final dependia de `Cerne_-_prototipo_final.html`/`Requisitos_e_Fluxo_de_Telas_TCC.md` — ausentes deste repositório desde a Fase 0. O Wagner subiu os dois direto no GitHub (`ux/Cerne - Prototipo Final.html`, `ux/Requisitos_e_Fluxo_de_Telas_TCC.md`); hash SHA-256 calculado e registrado em `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13 (ver checklist "Protótipo" acima). O terceiro arquivo pedido junto (`Ciencia_Orientador_Divergencias_de_Escopo.md`) foi dispensado pelo Wagner — não é uma dependência técnica de nenhuma tarefa deste backend, só um documento de gestão de risco acadêmico (registro de divergência de escopo para a orientadora, "Riscos Abertos" do `Contexto Geral.md` §24/plano iniciante §11) que eu tinha pedido junto por aparecer na mesma lista de "arquivos referenciados ausentes" sem diferenciar o motivo.
 
 - [ ] 🔴 **[MANUAL] `T-065` / `GATE-11`** — Criar a tag de congelamento e publicar o repositório de handoff
   - **O quê:** Criar a tag `backend-v1.0-frozen`, proteger o ramo principal, publicar o repositório de handoff (somente leitura, **sem o código-fonte do backend**).
   - **Como confirmo:** tag criada, ramo protegido, repositório de handoff publicado e acessível.
+  - **Progresso em 10/09/2026:** combinado com o Wagner que o repositório (`cerne-backend-handoff`, privado) será criado por mim via GitHub, assim que o restante do conteúdo estiver pronto para publicação — ainda não criado.
 
 ---
 
@@ -674,33 +735,34 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 *(consolidado da Seção 12 do plano técnico / Seção 9 do plano iniciante — nenhum ciclo comparativo começa antes de tudo aqui estar marcado)*
 
 **Banco e segurança**
-- [ ] Migrações aplicadas, estrutura idêntica nos 3 ambientes
-- [ ] Suíte pgTAP 100% verde
-- [ ] RLS forçada em todas as tabelas com dono
-- [ ] Apagamento de conta sem linhas/arquivos órfãos
-- [ ] Seed carregado (3 contas, datas relativas à âncora fixa)
-- [ ] Busca semântica encontra o par plantado (RF06)
+- [x] Migrações aplicadas, estrutura idêntica nos 3 ambientes — confirmado 11/09/2026, hash `f33a12b4...9868e2` idêntico em `dev`/`ciclo-a`/`ciclo-b` (ver T-064 passo 3 acima)
+- [x] Suíte pgTAP 100% verde — confirmado 11/09/2026: `Files=20, Tests=127, Result: PASS` idêntico em `dev`/`ciclo-a`/`ciclo-b`
+- [x] RLS forçada em todas as tabelas com dono — confirmado pelos 8 arquivos `rls_*.sql` da suíte pgTAP acima, verde nos 3 ambientes
+- [x] Apagamento de conta **sem linhas órfãs** — confirmado 11/09/2026 em `ciclo-a`/`ciclo-b`: `account_delete.hurl` (comportamento via API) + `account_delete_rpc.sql`/`cascade_delete.sql` (pgTAP, linhas de verdade no banco, passo 4) verdes nos 3 ambientes. ⚠️ **Achado, não corrigido:** nenhuma migração limpa arquivos do bucket `exports` no Storage quando a conta é apagada — "sem arquivos órfãos" não está coberto; reportar ao Wagner, não é uma lacuna para o agente preencher por conta própria (pode ser relevante para o RNF05/LGPD)
+- [x] Seed carregado (3 contas, datas relativas à âncora fixa) — confirmado 11/09/2026 em `ciclo-a`/`ciclo-b`: `seed.sql` sem erro, conta A com 34 entradas (33 `ready` + 1 `failed` intencional) nos dois
+- [x] Busca semântica encontra o par plantado (RF06) — confirmado 11/09/2026 em `ciclo-a`/`ciclo-b` via `busca_semantica.hurl` (endpoint real, não só conexão direta ao banco como na prova original do T-024): busca por "ansiedade" encontra a entrada plantada nos dois ambientes
 
 **Contratos**
-- [ ] Documentação da API gerada, versionada, sem divergência
-- [ ] Taxonomia de erro fechada em 13 códigos
-- [ ] 23 endpoints com suíte de contrato passando
-- [ ] Formato do streaming validado por teste
+- [x] Documentação da API gerada, versionada, sem divergência — job `contracts` do CI verde desde a Fase 2, sem drift (`contracts/openapi.yaml` gerado de `contracts/zod/registry.ts`)
+- [x] Taxonomia de erro fechada em 13 códigos — `errors.ts`, testado desde a Fase 2
+- [x] 23 endpoints com suíte de contrato passando — confirmado 11/09/2026: 27/27 arquivos Hurl verdes em `ciclo-a` **e** `ciclo-b`
+- [x] Formato do streaming validado por teste — `sse_ordem.hurl` verde nos dois ambientes (11/09/2026)
 
 **Reprodutibilidade**
-- [ ] Roteiro de validação escrito e revisado
-- [ ] Cache populado; reexecução estrita sem "não encontrado"
-- [ ] Teste de determinismo passando (2 execuções idênticas)
-- [ ] Modelo de embedding fixado, sem chamada sem versão explícita
-- [ ] Nenhum índice vetorial aproximado; toda ordenação com desempate
+- [x] Roteiro de validação escrito e revisado — aprovado pelo Wagner na Fase 6
+- [x] Cache populado; reexecução estrita sem "não encontrado" — confirmado 11/09/2026 em `ciclo-a` e `ciclo-b`, zero `REPLAY_MISS` nos dois
+- [x] Teste de determinismo passando (2 execuções idênticas) — reconfirmado 11/09/2026 no GitHub Actions real (branch `fase7`): `✅ IDÊNTICO`, 438 linhas normalizadas
+- [x] Modelo de embedding fixado, sem chamada sem versão explícita — `voyage-4`, 1024 dimensões, desde a Fase 1
+- [x] Nenhum índice vetorial aproximado; toda ordenação com desempate — confirmado pelo guardrail do `schema-hash.ts` nos 3 ambientes (passo 3)
 
 **Tratamento de erro**
-- [ ] Os 15 cenários demonstrados e registrados
-- [ ] Lista dos 5 endpoints de escrita confirmada e congelada
+- [x] Os 15 cenários demonstrados e registrados — confirmado 11/09/2026 em `ciclo-a` e `ciclo-b`: `falhas_15.hurl` `Success` (12/12) e `verify-fault-injection-log.ts` confirmam as 15/15 combinações distintas em `experiment.fault_injection_log` nos dois ambientes (ver T-064 passo 9 acima)
+- [x] Lista dos 5 endpoints de escrita confirmada e congelada — os 5 endpoints de escrita sujeitos a falha de dependência externa exercitados por `falhas_15.hurl` (verificado por leitura direta do arquivo): `entries-create`, `chat-messages-send`, `media-ocr`, `export-summary-create`, `chat-insight-create`; confirmados idênticos em `ciclo-a`/`ciclo-b`
 
 **Protótipo**
-- [ ] Congelado, com hash registrado no documento de requisitos
-- [ ] Todos os estados de tela sustentados por algum endpoint
+- [x] Congelado, com hash registrado no documento de requisitos — `ux/Cerne - Prototipo Final.html`, SHA-256 `61032a92...185d2fff` (completo em `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13), versão com o botão "Novo Chat" recebida e re-registrada em 11/09/2026 (commit `4aec9e8`)
+  - **Histórico:** recebido e registrado pela 1ª vez em 10/09/2026 (hash `fa4e0bb9...50e5876`); reaberto no mesmo dia por decisão de produto (acrescentar botão "Novo Chat" à Tela 3/Menu Lateral — `Contexto Geral.md` Seção 2.1). Fechado de novo em 11/09/2026 com a nova versão: confirmado por diff direto contra o commit anterior que o texto "Novo Chat" não existia antes e aparece 1 vez agora. Nenhum endpoint mudou — `POST /chat/sessions` já suportava múltiplas sessões por usuário.
+- [x] Todos os estados de tela sustentados por algum endpoint — verificado em 10/09/2026, tela a tela (Seção 5.2) e critério a critério (RF01–RF10), contra os 23 endpoints reais de `contracts/zod/registry.ts`. Todas as 7 telas confirmadas sustentadas pela interação que de fato descrevem. 3 divergências encontradas e corrigidas no próprio `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` (Seção 6/7 estavam na versão pré-reconciliação já sinalizada no `Contexto Geral.md`): `POST /auth/biometric-unlock` não existe (intencional, D2 — biometria é 100% local ao aparelho); tags/filtro por categoria não têm endpoint nenhum (intencional, T-015 — consistente com a própria Seção 2 do documento, que já marcava "Categorização Dinâmica" como sem implementação funcional); `PATCH`/`DELETE /entries/:id` não existem (intencional, D3 — entradas imutáveis) — o critério de aceite do RF09 que citava "editar/apagar uma entrada" foi ajustado, já que nenhuma tela descreve essa ação de fato. Nenhuma decisão D1–D18 foi reaberta — só o texto do documento de requisitos foi corrigido para bater com o backend congelado.
 
 **Entrega**
 - [ ] Repositório de entrega publicado, somente leitura
@@ -721,8 +783,8 @@ Repositório separado, somente leitura, contendo: documentação da API (contrat
 ## Itens em aberto — confirmar antes de depender
 
 - **3 códigos de erro:** o `Contexto Geral.md` (§13) lista `EXPORT_EMPTY_PERIOD`, `PAYLOAD_TOO_LARGE` e `OCR_NO_TEXT` como "nomes ainda a definir na Fase 2". O plano técnico (§8.7), mais recente e operacional, **já os nomeia** dessa forma. Tratar como resolvido pelo plano técnico, mas vale confirmar com o Wagner antes da `T-025` para eliminar a divergência entre os dois documentos.
-- **3 arquivos referenciados, não encontrados neste repositório** (confirmado por varredura completa do repo em 01/09/2026): `roteiro_de_validacao.md`, `Cerne_-_prototipo_final.html` (protótipo congelado, hash citado mas não localizado) e `Ciencia_Orientador_Divergencias_de_Escopo.md`. O próprio `Contexto Geral.md` (§25) já sinaliza isso como pendência. `roteiro_de_validacao.md` é especialmente crítico: sem ele, **o cache de replay é decorativo** (§6.3 do plano iniciante) — precisa existir antes da `T-060`.
-- Também referenciado mas ausente: `Requisitos_e_Fluxo_de_Telas_TCC.md` / `_v2.md` (fonte de requisitos RF01–RF10/RNF01–RNF09) — os três documentos atuais o citam como fonte, mas não está neste repositório.
+- **3 arquivos referenciados, não encontrados neste repositório até 01/09/2026** (confirmado por varredura completa do repo naquela data): `roteiro_de_validacao.md`, `Cerne_-_prototipo_final.html` (protótipo congelado, hash citado mas não localizado) e `Ciencia_Orientador_Divergencias_de_Escopo.md`. O próprio `Contexto Geral.md` (§25) já sinalizava isso como pendência. `roteiro_de_validacao.md` foi resolvido perto da Fase 6 (T-060). **`Cerne_-_prototipo_final.html` e `Requisitos_e_Fluxo_de_Telas_TCC.md` resolvidos em 10/09/2026** — o Wagner subiu os dois em `ux/`, hash registrado (ver Fase 7/T-064 acima). **`Ciencia_Orientador_Divergencias_de_Escopo.md` seguirá ausente por decisão do Wagner** (10/09/2026): não é insumo de nenhuma tarefa técnica deste backend — é o registro de divergência de escopo acadêmico para levar à orientadora (Riscos Abertos, `Contexto Geral.md` §24), fora do alcance deste repositório.
+- `Requisitos_e_Fluxo_de_Telas_TCC.md` / `_v2.md` (fonte de requisitos RF01–RF10/RNF01–RNF09) — **resolvido em 10/09/2026**, ver acima (é o mesmo arquivo do item anterior).
 - **Consolidado com detalhe de bloqueio na "Nota de ambiente e pendências herdadas" no início da Fase 6** (`T-060`/`T-061`/`T-062`) — inclui também um achado novo (09/09/2026): os jobs de CI `db`/`api`/`determinism` do §11.4 do plano técnico nunca foram criados em nenhuma fase anterior.
 
 ---

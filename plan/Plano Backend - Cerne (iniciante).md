@@ -475,7 +475,7 @@ Não existem endpoints de editar nem apagar entrada, nem endpoints de etiqueta.
 
 | Endpoint | O que faz |
 |---|---|
-| Criar conversa | Chamado **implicitamente** ao enviar a primeira mensagem. Não existe botão "nova conversa" |
+| Criar conversa | Chamado ao enviar a primeira mensagem de uma conversa nova. Desde 10/09/2026 também acionado pelo botão "Novo Chat" no menu lateral (que abre a Home vazia, disparando o mesmo endpoint na 1ª mensagem seguinte) — ver `Contexto Geral.md` Seção 2.1 |
 | Listar conversas | Para o menu lateral |
 | Listar mensagens | De uma conversa |
 | Enviar mensagem | Responde em streaming, no formato fixo da D12 |
@@ -748,8 +748,8 @@ Nenhum ciclo comparativo começa antes de **todos** os itens estarem verdadeiros
 - [ ] Lista dos cinco endpoints de escrita confirmada e congelada
 
 **Protótipo**
-- [ ] Congelado, com hash registrado no documento de requisitos
-- [ ] Todos os estados de tela sustentados por algum endpoint
+- [x] Congelado, com hash registrado no documento de requisitos — `ux/Cerne - Prototipo Final.html`, reaberto em 10/09/2026 pela adição do botão "Novo Chat" à Tela 3, **resolvido em 11/09/2026** com o hash `61032a92...185d2fff` — ver `Contexto Geral.md` Seção 2.1 e `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13.1
+- [x] Todos os estados de tela sustentados por algum endpoint — verificado tela a tela contra os 23 endpoints (`big-plan.md`, checklist final); o botão "Novo Chat" reaproveita `POST /chat/sessions`, sem endpoint novo
 
 **Entrega**
 - [ ] Repositório de entrega publicado, somente leitura

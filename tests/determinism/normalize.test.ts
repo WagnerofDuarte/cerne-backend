@@ -291,6 +291,105 @@ Deno.test("achado real (Wagner, T-062): timestamp no formato do Postgres (+00:00
   assertEquals(diffTranscripts(t1, t2).identical, true);
 });
 
+Deno.test("achado real (Wagner, 11/09/2026): poll intermediário de export-status-get (pending vs processing) não derruba a comparação", () => {
+  // Valores reais observados: mesmo jobId, mesma posição no transcript,
+  // só o status divergindo entre as duas execuções — 1ª falha real do job
+  // determinism no GitHub Actions após o congelamento da Fase 7.
+  const url = "http://127.0.0.1:54321/functions/v1/export-status-get/abc";
+  const entries: HurlFileReport["entries"] = [
+    {
+      index: 1,
+      calls: [call(
+        { status: 200, headers: [], body: "poll" },
+        url,
+      )],
+    },
+  ];
+
+  const t1 = buildTranscript(
+    report(entries),
+    bodies({
+      poll:
+        '{"data":{"jobId":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","status":"processing","narrativeStatus":"pending","entryCount":34,"errorCode":null,"narrativeErrorCode":null,"downloadAvailable":false}}',
+    }),
+  );
+  const t2 = buildTranscript(
+    report(structuredClone(entries)),
+    bodies({
+      poll:
+        '{"data":{"jobId":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","status":"pending","narrativeStatus":"pending","entryCount":34,"errorCode":null,"narrativeErrorCode":null,"downloadAvailable":false}}',
+    }),
+  );
+
+  assertEquals(diffTranscripts(t1, t2).identical, true);
+  // A entrada some inteira — nem o jobId (que apareceria de novo em outra
+  // requisição legítima) deveria consumir um placeholder de UUID aqui.
+  assertEquals(t1, "");
+});
+
+Deno.test("achado real (Wagner, 11/09/2026): número diferente de tentativas de export-status-get também não derruba a comparação", () => {
+  const url = "http://127.0.0.1:54321/functions/v1/export-status-get/abc";
+  const pendingCall = call(
+    { status: 200, headers: [], body: "poll" },
+    url,
+  );
+  const doneCall = call(
+    { status: 200, headers: [], body: "done" },
+    url,
+  );
+
+  // run1: 1 tentativa pendente, depois done.
+  const t1 = buildTranscript(
+    [{
+      entries: [
+        { index: 1, calls: [pendingCall] },
+        { index: 2, calls: [doneCall] },
+      ],
+    }],
+    bodies({
+      poll: '{"data":{"status":"pending"}}',
+      done: '{"data":{"status":"done","downloadAvailable":true}}',
+    }),
+  );
+
+  // run2: 3 tentativas pendentes/processando, depois done — número
+  // diferente de tentativas, mesmo resultado final.
+  const t2 = buildTranscript(
+    [{
+      entries: [
+        { index: 1, calls: [pendingCall] },
+        { index: 2, calls: [pendingCall] },
+        { index: 3, calls: [pendingCall] },
+        { index: 4, calls: [doneCall] },
+      ],
+    }],
+    bodies({
+      poll: '{"data":{"status":"processing"}}',
+      done: '{"data":{"status":"done","downloadAvailable":true}}',
+    }),
+  );
+
+  assertEquals(diffTranscripts(t1, t2).identical, true);
+});
+
+Deno.test("export-status-get em estado terminal (done/error) continua comparado normalmente — divergência real ainda é pega", () => {
+  const url = "http://127.0.0.1:54321/functions/v1/export-status-get/abc";
+  const entries: HurlFileReport["entries"] = [
+    { index: 1, calls: [call({ status: 200, headers: [], body: "b" }, url)] },
+  ];
+
+  const t1 = buildTranscript(
+    report(entries),
+    bodies({ b: '{"data":{"status":"done","downloadAvailable":true}}' }),
+  );
+  const t2 = buildTranscript(
+    report(structuredClone(entries)),
+    bodies({ b: '{"data":{"status":"error","downloadAvailable":false}}' }),
+  );
+
+  assertEquals(diffTranscripts(t1, t2).identical, false);
+});
+
 Deno.test("ordem das entradas por index é respeitada mesmo se o relatório vier fora de ordem", () => {
   const outOfOrder: HurlFileReport["entries"] = [
     { index: 2, calls: [call({ status: 200, headers: [], body: "second" })] },
