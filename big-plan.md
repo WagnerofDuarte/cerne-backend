@@ -762,10 +762,10 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
 ## Pós-congelamento
 
-- [ ] 🔴 **[MANUAL] `GATE-12`** — Reativar o ambiente `cerne-ciclo-b` antes de iniciar o ciclo B
-  - **O quê:** Projetos gratuitos do Supabase pausam por inatividade. Como `ciclo-b` fica parado durante todo o ciclo A (semanas), reativá-lo manualmente no painel do Supabase antes de liberar o ciclo B.
-  - **Por que agora:** reconferir a estrutura do schema (hash idêntico ao `ciclo-a` e ao `dev`) antes de liberar é obrigatório — está no checklist de congelamento (D14).
-  - **Como confirmo:** projeto reativado, hash de schema conferido como idêntico.
+- [ ] 🟡 **[MANUAL] `GATE-12`** — Reconferir o schema de `cerne-ciclo-b` antes de iniciar o ciclo B
+  - **O quê:** reconferir a estrutura do schema (hash idêntico ao `ciclo-a` e ao `dev`) antes de liberar o ciclo B — está no checklist de congelamento (D14).
+  - **Atualizado em 11/09/2026:** este item nasceu presumindo que `ciclo-b` (projeto gratuito) pausaria por inatividade durante todo o ciclo A e precisaria de reativação manual no painel do Supabase antes do ciclo B. **Não se aplica mais** — o Wagner fez upgrade da organização Supabase inteira para o plano **Pro**, que não pausa projetos por inatividade. A reconferência do hash de schema continua obrigatória (D14), só deixa de haver o passo de "reativar" antes dela.
+  - **Como confirmo:** hash de schema de `ciclo-b` conferido como idêntico ao `dev`/`ciclo-a` (`scripts/schema-hash.ts`) antes de liberar o ciclo B.
 
 ---
 
