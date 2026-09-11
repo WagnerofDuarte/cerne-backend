@@ -105,9 +105,9 @@ export function buildMapaEstadosTelaMd(): string {
     "Este é o **único** mapeamento tela↔status que os documentos-fonte definem em " +
     "detalhe suficiente para reproduzir sem ambiguidade — cobre só a tela de " +
     "exportação (RF05). Um mapa completo de todas as telas do protótipo (RF01–RF10) " +
-    "depende de `Requisitos_e_Fluxo_de_Telas_TCC.md`, que não está neste " +
-    "repositório (ver `docs/bugs_conhecidos.md`/registro de pendências no " +
-    '`big-plan.md`, seção "Itens em aberto").\n'
+    "está em `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` (recebido em 10/09/2026, ver " +
+    '`big-plan.md`, seção "Itens em aberto") — não transcrito aqui porque foge do ' +
+    "escopo deste mapa (só RF05/export_jobs).\n"
   );
 }
 
