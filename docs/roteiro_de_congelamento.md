@@ -306,13 +306,49 @@ conforme a resposta da IA daquele dia, isso é esperado).
 
 ## Passo 7 — Reexecutar em `replay_strict` nos dois, zero `REPLAY_MISS`
 
+⚠️ **Achado real, confirmado — precisa "recriar o banco" antes de cada
+reexecução, nos dois ambientes, mesmo `ciclo-a` (que já rodou o roteiro
+uma vez no passo 6):** o roteiro (Bloco 7) cria entradas de verdade, e o
+`seed.sql` é só aditivo (`on conflict do nothing`, nunca apaga nada) —
+então rodar o roteiro de novo sem limpar antes falha a mesma asserção de
+contagem fixa do Passo 5/6 (`dashboard-aggregate-get`, `totals.count`).
+Como não existe `supabase db reset` contra um projeto remoto, o
+equivalente é: truncar as tabelas que o uso normal muda, recarregar o
+seed, e (só em `ciclo-b`) importar o cache — **nunca truncar
+`experiment.ai_replay_cache` em `ciclo-a`** (é a gravação original que
+tudo depende).
+
+**Em `ciclo-a`** (só limpa os dados, cache fica intacto):
 ```bash
+psql '<connection string do ciclo-a>' \
+  -c "truncate table entries, chat_sessions, chat_messages, insights, export_jobs cascade;"
+
+psql '<connection string do ciclo-a>' -f supabase/seed/seed.sql
+
+# reaproveita o cache que já existe — 0 chamada nova à Voyage esperada
+SUPABASE_DB_URL='<connection string do ciclo-a>' VOYAGE_API_KEY='<...>' PROMPT_VERSION='<...>' \
+  deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts
+
+supabase secrets set --project-ref <ref-ciclo-a> REPLAY_MODE=replay_strict
+```
+
+**Em `ciclo-b`** (limpa dados **e** o resquício de cache do teste isolado
+do `retry_chat.hurl` no passo 5, depois importa o cache de `ciclo-a`):
+```bash
+psql '<connection string do ciclo-b>' \
+  -c "truncate table entries, chat_sessions, chat_messages, insights, export_jobs cascade; truncate table experiment.ai_replay_cache;"
+
+psql '<connection string do ciclo-b>' -f supabase/seed/seed.sql
+
 # importar o MESMO cache em ciclo-b — nunca gravar de novo lá (armadilha
-# do apêndice: "gravar o cache duas vezes anula o mecanismo de replay")
+# do apêndice: "gravar o cache duas vezes anula o mecanismo de replay").
+# Destino vazio (acabou de truncar) — não precisa de --force.
 SUPABASE_DB_URL='<connection string do ciclo-b>' \
   deno run -A scripts/replay-cache-import.ts --in /tmp/cache-ciclo-a.json
 
-supabase secrets set --project-ref <ref-ciclo-a> REPLAY_MODE=replay_strict
+SUPABASE_DB_URL='<connection string do ciclo-b>' VOYAGE_API_KEY='<...>' PROMPT_VERSION='<...>' \
+  deno run --allow-net --allow-env scripts/backfill-seed-embeddings.ts
+
 supabase secrets set --project-ref <ref-ciclo-b> REPLAY_MODE=replay_strict
 ```
 
@@ -321,6 +357,12 @@ Rodar `tests/determinism/roteiro_validacao.hurl` (mesmo comando do passo
 nos dois, e nenhuma resposta com `X-Replay-Status: miss` — `replay_strict`
 por design faz a chamada falhar alto num miss (Fase 2, `T-030`), então
 qualquer coisa diferente de `Success` já é o sinal de um `REPLAY_MISS`.
+
+**✅ Confirmado em 11/09/2026 — `ciclo-a`: `Success`, 30 requisições;
+`ciclo-b`: `Success`, 29 requisições. Zero chamada real à IA nos dois.**
+Pequena diferença no número de requisições entre os dois é esperada — não
+é sintoma de nada errado (nenhuma etapa do roteiro depende do total de
+requisições bater entre execuções, só do conteúdo/`X-Replay-Status`).
 
 Opcional, mas recomendado para ter o mesmo tipo de prova byte-a-byte já
 feito na Fase 6: rodar `tests/determinism/compare.ts` entre o relatório
