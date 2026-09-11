@@ -242,18 +242,48 @@ dos 4 achados acima corrigidos (Confirm email, variáveis do OCR,
 forma). Faltando: repetir em `ciclo-b`, já com as 4 correções desde o
 início (não deveria achar nada novo lá).
 
+⚠️ **Antes do Passo 6:** esta suíte deixa entradas de teste na conta A
+do seed (`entries_create.hurl`, `idempotencia_rf10.hurl`, etc.) — ver a
+limpeza obrigatória no início do Passo 6, tanto em `ciclo-a` quanto,
+depois, em `ciclo-b`.
+
 ---
 
 ## Passo 6 — Roteiro em `record` **só em `ciclo-a`**; exportar o cache
 
+⚠️ **Achado real, confirmado em `ciclo-a`: rodar o Passo 5 antes deste
+suja a conta A do seed.** Vários arquivos da suíte Hurl (`entries_create.
+hurl`, `idempotencia_rf10.hurl`, etc.) criam entradas de verdade na conta
+`cenario-cheio@cerne.test` — as mesmas 34 entradas fixas que o roteiro
+deste passo espera encontrar. Sintoma: `dashboard-aggregate-get` no
+roteiro falha com `totals.count` maior que 34. **Antes de rodar o
+roteiro, sempre limpar as entradas extras** (todas as 34 do seed têm id
+com o prefixo `a0000000-0000-0000-0004-`; qualquer outra pertencente à
+conta A é resíduo de teste):
+
+```bash
+# 1. Conferir o que sobrou, sem apagar nada ainda:
+psql '<connection string do ciclo>' \
+  -c "select id, source, content, created_at from entries where user_id = 'a0000000-0000-0000-0000-000000000001' and id::text not like 'a0000000-0000-0000-0004-%' order by created_at;"
+
+# 2. Apagar só o que aparecer ali (IDs específicos, nunca um DELETE genérico):
+psql '<connection string do ciclo>' \
+  -c "delete from entries where id in ('<id-1>', '<id-2>', ...);"
+
+# 3. Confirmar que voltou a 34:
+psql '<connection string do ciclo>' \
+  -c "select count(*) from entries where user_id = 'a0000000-0000-0000-0000-000000000001';"
+```
+(A outra contagem do roteiro, mais adiante, já é `>= 38` — tolerante a
+entradas extras, não precisa de limpeza. Só a de `totals.count == 34`
+exige a conta intocada.)
+
 ```bash
 supabase secrets set --project-ref <ref-ciclo-a> REPLAY_MODE=record
 ```
-⚠️ **Ponto de atenção, não confirmado nesta sessão:** não sei se um
-secret novo exige redeploy da função para valer em produção gerenciada
-(local, `functions serve --env-file` lê o arquivo a cada início). Se o
-roteiro abaixo não gravar nada em `ai_replay_cache`, o primeiro passo a
-checar é rodar `supabase functions deploy` de novo depois do `secrets set`.
+✅ **Confirmado nesta sessão:** um `secrets set` novo já vale sem precisar
+de `functions deploy` de novo — não é preciso redeployar depois de trocar
+`REPLAY_MODE`.
 
 ```bash
 hurl --test --jobs 1 \
