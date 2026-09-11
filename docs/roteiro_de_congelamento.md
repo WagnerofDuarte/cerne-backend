@@ -430,6 +430,14 @@ TEST_FAULT_KEY='<...>' \
 `offline` sem resposta e as **15/15 combinações distintas** em
 `experiment.fault_injection_log`.
 
+**✅ Confirmado em 11/09/2026 — `ciclo-a` e `ciclo-b`, resultado idêntico
+nos dois:** `falhas_15.hurl` `Success`, 12/12 requisições (~3 minutos,
+5 timeouts de 35s dos cenários `offline`); `verify-fault-injection-log.ts`
+confirmou os 5 cenários `offline` sem resposta e as **15/15 combinações
+distintas** registradas em `experiment.fault_injection_log`. Nenhum achado
+novo. `T-064` passo 9 fechado — os **9 passos de execução real do
+procedimento de congelamento estão completos em `ciclo-a` e `ciclo-b`**.
+
 ---
 
 ## Passo 10 — Montar `docs/handoff/`

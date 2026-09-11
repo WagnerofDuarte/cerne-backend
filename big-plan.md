@@ -652,13 +652,29 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
   6. ✅ Executar o roteiro em `record` **no `ciclo-a` apenas**; exportar o cache; importar o mesmo cache no `ciclo-b` (import ainda pendente)
   7. ✅ Reexecutar o roteiro em `replay_strict` nos dois — zero `REPLAY_MISS`
   8. ✅ Job `determinism` verde
-  9. Conferir `fault_injection_log`: os 15 cenários registrados
+  9. ✅ Conferir `fault_injection_log`: os 15 cenários registrados
   10. Montar `docs/handoff/` (ver "Pacote entregue aos dois ciclos" abaixo)
 
   **Progresso em 10/09/2026 — ferramental dos passos 3 e 10 pronto, ainda sem execução real (mesmo bloqueio de rede/Docker de toda fase anterior):**
   - **Passo 3 (`scripts/schema-hash.ts`, novo):** nenhuma fase anterior comparou estrutura entre ambientes — só `dev` tinha sido tocado até aqui. Conecta direto no Postgres (padrão de `replay-cache-export.ts`), introspecciona só `public`/`experiment` (extensões por allowlist fechada, colunas, RLS, constraints, índices, triggers, funções, políticas, grants de tabela) e produz texto canônico + hash SHA-256. Bônus: falha alto se achar `USING hnsw`/`ivfflat` (regra nº7), não só compara cego. **Validado contra Postgres 16 real neste sandbox** (pgvector 0.6.0/pgtap 1.3.2 via apt, `auth` mockado à mão): duas bases construídas independentemente a partir das migrações 0001–0011 (+ a função de 0012 antes do ponto que precisa de `pg_cron`, indisponível via apt aqui) deram hash **idêntico**; um índice HNSW plantado de propósito foi pego e nomeado exatamente. 10/10 testes unitários novos. Cobertura das migrações que dependem de `pgmq`/`pg_net`/Storage (0013-0014, 0018-0020) fica para a execução real do Wagner, mesma nota de ambiente já registrada em `0014_export_queue.sql`.
   - **Passo 10 (`scripts/gen-handoff-docs.ts` + `scripts/build-handoff-package.sh`, novos):** o primeiro gera de fonte única (nunca à mão) `docs/handoff/taxonomia_erros.md` (de `errors.ts`), `mapa_estados_tela.md` (transcrição do único mapeamento tela↔status que os documentos-fonte definem em detalhe — `export_jobs`/RF05; registra que um mapa completo de todas as telas depende do `Requisitos_e_Fluxo_de_Telas_TCC.md` ausente), `selo_sincronizacao.md` (D9, ancorado nos campos reais `Entry.serverRevision`/`updatedAt`), `politica_defeito_D16.md` e o `README.md` índice. O segundo monta o pacote **completo** (os gerados + `contracts/openapi.yaml`, roteiro, fixtures, coleção Hurl, `bugs_conhecidos.md`) num diretório de destino externo só na hora real de publicar — deliberadamente **não duplicado dentro de `cerne-backend`** (fixtures/media/ sozinho tem ~12MB) — e nunca toca credencial nenhuma (só cria `credenciais/README.md` explicando o preenchimento manual). Testado de ponta a ponta contra um diretório vazio real (35 arquivos corretos) e as 3 guardas de erro; achou e corrigiu um bug real de path (`../..` copiado por engano do padrão de `tests/determinism/run.sh`, que vive um nível mais fundo). 8/8 testes novos.
   - **Item 9 do procedimento** continua dependente de execução real. Fica para o Wagner rodar, seguindo `docs/roteiro_de_congelamento.md`.
+
+  **Progresso em 11/09/2026 — passo 9 confirmado, sem achados novos —
+  os 9 passos de execução real do procedimento de congelamento estão
+  completos em `ciclo-a` e `ciclo-b`:**
+  - **`ciclo-a`:** `falhas_15.hurl` `Success`, 12/12 requisições
+    (~3 minutos, 5 timeouts de 35s dos cenários `offline`);
+    `verify-fault-injection-log.ts` confirmou os 5 cenários `offline` sem
+    resposta e as **15/15 combinações distintas** registradas em
+    `experiment.fault_injection_log`.
+  - **`ciclo-b`:** resultado idêntico — `Success`, 12/12, 5/5 `offline`
+    confirmados, 15/15 combinações em `experiment.fault_injection_log`.
+  - Marco: primeira vez que os passos 1–9 do procedimento de
+    congelamento (Seção 12 do plano técnico) rodam de ponta a ponta
+    contra infraestrutura real (`ciclo-a`/`ciclo-b`), com todos os
+    achados de ambiente documentados em `docs/roteiro_de_congelamento.md`.
+    Falta só o passo 10 (montagem do pacote de handoff) e o `T-065`/`GATE-11`.
 
   **Progresso em 11/09/2026 — passo 8 confirmado, com 1 achado real importante:**
   - **Achado — `export-status-get` (polling assíncrono) pode divergir entre execuções sem ser bug real:** 1ª tentativa do job `determinism` no GitHub Actions após o congelamento falhou de verdade — mesmo `jobId`, mesma posição no transcript, execução 1 pegou `"status":"processing"` onde a execução 2 ainda tinha `"pending"`. Causa: o `pg_cron` acorda em relógio de parede real, nunca sincronizado com o teste; as duas terminam em `"done"` (o que o roteiro de fato garante via `[Asserts]`), só uma tentativa intermediária no meio do caminho capturou o job em instantes ligeiramente diferentes. Mesma categoria de um achado já aceito desde a Fase 5 (o número de tentativas pode variar) — versão mais estrita, o conteúdo de uma tentativa também pode variar.
@@ -740,8 +756,8 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 - [x] Nenhum índice vetorial aproximado; toda ordenação com desempate — confirmado pelo guardrail do `schema-hash.ts` nos 3 ambientes (passo 3)
 
 **Tratamento de erro**
-- [ ] Os 15 cenários demonstrados e registrados
-- [ ] Lista dos 5 endpoints de escrita confirmada e congelada
+- [x] Os 15 cenários demonstrados e registrados — confirmado 11/09/2026 em `ciclo-a` e `ciclo-b`: `falhas_15.hurl` `Success` (12/12) e `verify-fault-injection-log.ts` confirmam as 15/15 combinações distintas em `experiment.fault_injection_log` nos dois ambientes (ver T-064 passo 9 acima)
+- [x] Lista dos 5 endpoints de escrita confirmada e congelada — os 5 endpoints de escrita sujeitos a falha de dependência externa exercitados por `falhas_15.hurl` (verificado por leitura direta do arquivo): `entries-create`, `chat-messages-send`, `media-ocr`, `export-summary-create`, `chat-insight-create`; confirmados idênticos em `ciclo-a`/`ciclo-b`
 
 **Protótipo**
 - [x] Congelado, com hash registrado no documento de requisitos — `ux/Cerne - Prototipo Final.html`, SHA-256 `fa4e0bb9...50e5876` (completo em `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13), recebido e registrado em 10/09/2026
