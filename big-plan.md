@@ -647,7 +647,7 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
   1. ✅ `supabase db reset` no `dev` — confirmar que migrações + seed rodam do zero
   2. ✅ Aplicar migrações em `ciclo-a` e `ciclo-b`
   3. ✅ Gerar hash do schema dos três ambientes — **confirmar que são idênticos**
-  4. `supabase test db` nos três — 100% verde
+  4. ✅ `supabase test db` nos três — 100% verde
   5. Suíte Hurl completa contra `ciclo-a` e `ciclo-b`
   6. Executar o roteiro em `record` **no `ciclo-a` apenas**; exportar o cache; **importar o mesmo cache no `ciclo-b`**
   7. Reexecutar o roteiro em `replay_strict` nos dois — zero `REPLAY_MISS`
@@ -658,7 +658,9 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
   **Progresso em 10/09/2026 — ferramental dos passos 3 e 10 pronto, ainda sem execução real (mesmo bloqueio de rede/Docker de toda fase anterior):**
   - **Passo 3 (`scripts/schema-hash.ts`, novo):** nenhuma fase anterior comparou estrutura entre ambientes — só `dev` tinha sido tocado até aqui. Conecta direto no Postgres (padrão de `replay-cache-export.ts`), introspecciona só `public`/`experiment` (extensões por allowlist fechada, colunas, RLS, constraints, índices, triggers, funções, políticas, grants de tabela) e produz texto canônico + hash SHA-256. Bônus: falha alto se achar `USING hnsw`/`ivfflat` (regra nº7), não só compara cego. **Validado contra Postgres 16 real neste sandbox** (pgvector 0.6.0/pgtap 1.3.2 via apt, `auth` mockado à mão): duas bases construídas independentemente a partir das migrações 0001–0011 (+ a função de 0012 antes do ponto que precisa de `pg_cron`, indisponível via apt aqui) deram hash **idêntico**; um índice HNSW plantado de propósito foi pego e nomeado exatamente. 10/10 testes unitários novos. Cobertura das migrações que dependem de `pgmq`/`pg_net`/Storage (0013-0014, 0018-0020) fica para a execução real do Wagner, mesma nota de ambiente já registrada em `0014_export_queue.sql`.
   - **Passo 10 (`scripts/gen-handoff-docs.ts` + `scripts/build-handoff-package.sh`, novos):** o primeiro gera de fonte única (nunca à mão) `docs/handoff/taxonomia_erros.md` (de `errors.ts`), `mapa_estados_tela.md` (transcrição do único mapeamento tela↔status que os documentos-fonte definem em detalhe — `export_jobs`/RF05; registra que um mapa completo de todas as telas depende do `Requisitos_e_Fluxo_de_Telas_TCC.md` ausente), `selo_sincronizacao.md` (D9, ancorado nos campos reais `Entry.serverRevision`/`updatedAt`), `politica_defeito_D16.md` e o `README.md` índice. O segundo monta o pacote **completo** (os gerados + `contracts/openapi.yaml`, roteiro, fixtures, coleção Hurl, `bugs_conhecidos.md`) num diretório de destino externo só na hora real de publicar — deliberadamente **não duplicado dentro de `cerne-backend`** (fixtures/media/ sozinho tem ~12MB) — e nunca toca credencial nenhuma (só cria `credenciais/README.md` explicando o preenchimento manual). Testado de ponta a ponta contra um diretório vazio real (35 arquivos corretos) e as 3 guardas de erro; achou e corrigiu um bug real de path (`../..` copiado por engano do padrão de `tests/determinism/run.sh`, que vive um nível mais fundo). 8/8 testes novos.
-  - **Itens 4/5/6/7/8/9 do procedimento** continuam dependentes de execução real. Ficam para o Wagner rodar, seguindo `docs/roteiro_de_congelamento.md`.
+  - **Itens 5/6/7/8/9 do procedimento** continuam dependentes de execução real. Ficam para o Wagner rodar, seguindo `docs/roteiro_de_congelamento.md`.
+
+  **Progresso em 11/09/2026 — passo 4 confirmado:** `supabase test db` rodado nos 3 ambientes pelo Wagner, resultado **idêntico** nos 3: `Files=20, Tests=127, Result: PASS`. Primeira vez que a suíte pgTAP inteira (as 20 verificações, incluindo as 8 de RLS por tabela, `experiment_rpc`, `export_queue`, `export_fault`, etc.) roda contra `ciclo-a`/`ciclo-b` de verdade.
 
   **Progresso em 11/09/2026 — passos 1/2/3 confirmados de ponta a ponta pelo Wagner, contra a infraestrutura real (primeira vez que `ciclo-a`/`ciclo-b` são tocados neste projeto):**
   - **Passo 1 (`dev`):** `supabase db reset` local confirmado sem erro.
@@ -693,8 +695,8 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 
 **Banco e segurança**
 - [x] Migrações aplicadas, estrutura idêntica nos 3 ambientes — confirmado 11/09/2026, hash `f33a12b4...9868e2` idêntico em `dev`/`ciclo-a`/`ciclo-b` (ver T-064 passo 3 acima)
-- [ ] Suíte pgTAP 100% verde — falta rodar `supabase test db` em `ciclo-a`/`ciclo-b` (passo 4)
-- [ ] RLS forçada em todas as tabelas com dono — estrutura idêntica ao `dev` (já provado, Fase 1) confirmada pelo hash, mas a suíte pgTAP dedicada (passo 4) ainda não rodou em `ciclo-a`/`ciclo-b`
+- [x] Suíte pgTAP 100% verde — confirmado 11/09/2026: `Files=20, Tests=127, Result: PASS` idêntico em `dev`/`ciclo-a`/`ciclo-b`
+- [x] RLS forçada em todas as tabelas com dono — confirmado pelos 8 arquivos `rls_*.sql` da suíte pgTAP acima, verde nos 3 ambientes
 - [ ] Apagamento de conta sem linhas/arquivos órfãos — não reexercitado em `ciclo-a`/`ciclo-b`
 - [x] Seed carregado (3 contas, datas relativas à âncora fixa) — confirmado 11/09/2026 em `ciclo-a`/`ciclo-b`: `seed.sql` sem erro, conta A com 34 entradas (33 `ready` + 1 `failed` intencional) nos dois
 - [ ] Busca semântica encontra o par plantado (RF06) — não reexercitado em `ciclo-a`/`ciclo-b` (só em `dev`, Fase 1)
