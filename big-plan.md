@@ -649,16 +649,48 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
   3. ✅ Gerar hash do schema dos três ambientes — **confirmar que são idênticos**
   4. ✅ `supabase test db` nos três — 100% verde
   5. ✅ Suíte Hurl completa contra `ciclo-a` e `ciclo-b`
-  6. Executar o roteiro em `record` **no `ciclo-a` apenas**; exportar o cache; **importar o mesmo cache no `ciclo-b`**
-  7. Reexecutar o roteiro em `replay_strict` nos dois — zero `REPLAY_MISS`
-  8. Job `determinism` verde
-  9. Conferir `fault_injection_log`: os 15 cenários registrados
+  6. ✅ Executar o roteiro em `record` **no `ciclo-a` apenas**; exportar o cache; importar o mesmo cache no `ciclo-b` (import ainda pendente)
+  7. ✅ Reexecutar o roteiro em `replay_strict` nos dois — zero `REPLAY_MISS`
+  8. ✅ Job `determinism` verde
+  9. ✅ Conferir `fault_injection_log`: os 15 cenários registrados
   10. Montar `docs/handoff/` (ver "Pacote entregue aos dois ciclos" abaixo)
 
   **Progresso em 10/09/2026 — ferramental dos passos 3 e 10 pronto, ainda sem execução real (mesmo bloqueio de rede/Docker de toda fase anterior):**
   - **Passo 3 (`scripts/schema-hash.ts`, novo):** nenhuma fase anterior comparou estrutura entre ambientes — só `dev` tinha sido tocado até aqui. Conecta direto no Postgres (padrão de `replay-cache-export.ts`), introspecciona só `public`/`experiment` (extensões por allowlist fechada, colunas, RLS, constraints, índices, triggers, funções, políticas, grants de tabela) e produz texto canônico + hash SHA-256. Bônus: falha alto se achar `USING hnsw`/`ivfflat` (regra nº7), não só compara cego. **Validado contra Postgres 16 real neste sandbox** (pgvector 0.6.0/pgtap 1.3.2 via apt, `auth` mockado à mão): duas bases construídas independentemente a partir das migrações 0001–0011 (+ a função de 0012 antes do ponto que precisa de `pg_cron`, indisponível via apt aqui) deram hash **idêntico**; um índice HNSW plantado de propósito foi pego e nomeado exatamente. 10/10 testes unitários novos. Cobertura das migrações que dependem de `pgmq`/`pg_net`/Storage (0013-0014, 0018-0020) fica para a execução real do Wagner, mesma nota de ambiente já registrada em `0014_export_queue.sql`.
   - **Passo 10 (`scripts/gen-handoff-docs.ts` + `scripts/build-handoff-package.sh`, novos):** o primeiro gera de fonte única (nunca à mão) `docs/handoff/taxonomia_erros.md` (de `errors.ts`), `mapa_estados_tela.md` (transcrição do único mapeamento tela↔status que os documentos-fonte definem em detalhe — `export_jobs`/RF05; registra que um mapa completo de todas as telas depende do `Requisitos_e_Fluxo_de_Telas_TCC.md` ausente), `selo_sincronizacao.md` (D9, ancorado nos campos reais `Entry.serverRevision`/`updatedAt`), `politica_defeito_D16.md` e o `README.md` índice. O segundo monta o pacote **completo** (os gerados + `contracts/openapi.yaml`, roteiro, fixtures, coleção Hurl, `bugs_conhecidos.md`) num diretório de destino externo só na hora real de publicar — deliberadamente **não duplicado dentro de `cerne-backend`** (fixtures/media/ sozinho tem ~12MB) — e nunca toca credencial nenhuma (só cria `credenciais/README.md` explicando o preenchimento manual). Testado de ponta a ponta contra um diretório vazio real (35 arquivos corretos) e as 3 guardas de erro; achou e corrigiu um bug real de path (`../..` copiado por engano do padrão de `tests/determinism/run.sh`, que vive um nível mais fundo). 8/8 testes novos.
-  - **Itens 6/7/8/9 do procedimento** continuam dependentes de execução real. Ficam para o Wagner rodar, seguindo `docs/roteiro_de_congelamento.md`.
+  - **Item 9 do procedimento** continua dependente de execução real. Fica para o Wagner rodar, seguindo `docs/roteiro_de_congelamento.md`.
+
+  **Progresso em 11/09/2026 — passo 9 confirmado, sem achados novos —
+  os 9 passos de execução real do procedimento de congelamento estão
+  completos em `ciclo-a` e `ciclo-b`:**
+  - **`ciclo-a`:** `falhas_15.hurl` `Success`, 12/12 requisições
+    (~3 minutos, 5 timeouts de 35s dos cenários `offline`);
+    `verify-fault-injection-log.ts` confirmou os 5 cenários `offline` sem
+    resposta e as **15/15 combinações distintas** registradas em
+    `experiment.fault_injection_log`.
+  - **`ciclo-b`:** resultado idêntico — `Success`, 12/12, 5/5 `offline`
+    confirmados, 15/15 combinações em `experiment.fault_injection_log`.
+  - Marco: primeira vez que os passos 1–9 do procedimento de
+    congelamento (Seção 12 do plano técnico) rodam de ponta a ponta
+    contra infraestrutura real (`ciclo-a`/`ciclo-b`), com todos os
+    achados de ambiente documentados em `docs/roteiro_de_congelamento.md`.
+    Falta só o passo 10 (montagem do pacote de handoff) e o `T-065`/`GATE-11`.
+
+  **Progresso em 11/09/2026 — passo 8 confirmado, com 1 achado real importante:**
+  - **Achado — `export-status-get` (polling assíncrono) pode divergir entre execuções sem ser bug real:** 1ª tentativa do job `determinism` no GitHub Actions após o congelamento falhou de verdade — mesmo `jobId`, mesma posição no transcript, execução 1 pegou `"status":"processing"` onde a execução 2 ainda tinha `"pending"`. Causa: o `pg_cron` acorda em relógio de parede real, nunca sincronizado com o teste; as duas terminam em `"done"` (o que o roteiro de fato garante via `[Asserts]`), só uma tentativa intermediária no meio do caminho capturou o job em instantes ligeiramente diferentes. Mesma categoria de um achado já aceito desde a Fase 5 (o número de tentativas pode variar) — versão mais estrita, o conteúdo de uma tentativa também pode variar.
+  - **Corrigido em `tests/determinism/normalize.ts`:** qualquer resposta de `export-status-get` cujo status não seja terminal (`done`/`error`) é excluída inteira do transcript (não só o corpo) — resolve conteúdo intermediário divergente E número de tentativas divergente ao mesmo tempo. Precisou trocar o índice bruto do Hurl por um contador de posição de saída no transcript (achado ao escrever o teste do 2º caso). 3 testes novos, 14/14 em `normalize.test.ts`, 416/416 no repo inteiro.
+  - **✅ Confirmado no GitHub Actions real, run disparado manualmente no branch `fase7`, commit `07ad833`:** jobs `contracts` e `determinism` verdes — `✅ IDÊNTICO — as duas execuções de roteiro_validacao.hurl produziram o mesmo resultado (438 linhas normalizadas)`.
+
+  **Progresso em 11/09/2026 — passo 7 confirmado, com 1 achado real importante:**
+  - **Achado — reexecutar o roteiro exige "recriar o banco" antes, nos dois ambientes (inclusive `ciclo-a`, que já tinha rodado uma vez no passo 6):** o roteiro (Bloco 7) cria entradas de verdade e `seed.sql` é só aditivo (nunca apaga) — sem limpar antes, a reexecução falha a mesma asserção de contagem fixa do passo 6. Sem `db reset` disponível contra um projeto remoto, o equivalente foi truncar as tabelas mutáveis (`entries`, `chat_sessions`, `chat_messages`, `insights`, `export_jobs`) + recarregar o seed, preservando `experiment.ai_replay_cache` em `ciclo-a` (é a gravação original) e truncando-o em `ciclo-b` antes de importar (evita precisar de `--force`, o resquício do teste isolado do `retry_chat.hurl` no passo 5 não fazia falta). Backfill dos embeddings reaproveitou o cache dos dois lados, **0 chamadas novas à Voyage**.
+  - **`ciclo-a` replay_strict:** `Success`, 30 requisições, zero `REPLAY_MISS`.
+  - **`ciclo-b` replay_strict** (cache importado de `ciclo-a`, 63 entradas): `Success`, 29 requisições, zero `REPLAY_MISS` — **zero chamada real à IA em `ciclo-b` do início ao fim**, reproduzindo exatamente a gravação de `ciclo-a`. Prova central do experimento inteiro confirmada de ponta a ponta contra infraestrutura real.
+  - Diferença de 1 requisição entre os dois é esperada (retries de polling assíncrono do worker de exportação, já documentado desde a Fase 5) — não indica não-determinismo.
+
+  **Progresso em 11/09/2026 — passo 6 confirmado, com 1 achado real importante:**
+  - **Achado — o Passo 5 (suíte Hurl completa) suja a conta A do seed:** vários arquivos criam entradas de verdade em `cenario-cheio@cerne.test` (`entries_create.hurl`, `idempotencia_rf10.hurl`) — o roteiro assume 34 entradas fixas, e a 1ª tentativa falhou com `dashboard-aggregate-get` retornando `totals.count=36`. Diagnosticado por leitura direta (2 entradas extras, ambas claramente artefatos de teste pelo próprio conteúdo, `created_at` de hoje) e removidas por id explícito — todas as 34 do seed compartilham o prefixo `a0000000-0000-0000-0004-`, o que tornou a identificação segura. Documentado em `docs/roteiro_de_congelamento.md` como um passo de limpeza obrigatório entre os passos 5 e 6, em qualquer ambiente.
+  - **Confirmado também:** `supabase secrets set` novo já vale sem precisar de `functions deploy` de novo.
+  - **Roteiro gravado com sucesso em `ciclo-a`** (`REPLAY_MODE=record`): `Success`, 32 requisições. Cache exportado: **63 entradas**, cobrindo as 7 operações de IA (`chat`: 8, `dashboard`: 1, `embedding`: 45, `insight`: 2, `narrative`: 1, `ocr`: 2, `pii`: 4), 15 hits já dentro da própria gravação (retries/buscas repetidas). Esta foi a **única** chamada real à IA de todo o processo de congelamento — a partir daqui, `ciclo-b` só reaproveita.
 
   **Progresso em 11/09/2026 — passo 5 confirmado, com 4 achados reais de ambiente (todos corrigidos, nenhum bug de código):**
   - `ciclo-a`: 24/27 arquivos verdes de primeira; 3 falharam por causas de ambiente, todas corrigidas e reexecutadas com sucesso — **27/27 final**.
@@ -717,15 +749,15 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 - [x] Formato do streaming validado por teste — `sse_ordem.hurl` verde nos dois ambientes (11/09/2026)
 
 **Reprodutibilidade**
-- [ ] Roteiro de validação escrito e revisado
-- [ ] Cache populado; reexecução estrita sem "não encontrado"
-- [ ] Teste de determinismo passando (2 execuções idênticas)
-- [ ] Modelo de embedding fixado, sem chamada sem versão explícita
-- [ ] Nenhum índice vetorial aproximado; toda ordenação com desempate
+- [x] Roteiro de validação escrito e revisado — aprovado pelo Wagner na Fase 6
+- [x] Cache populado; reexecução estrita sem "não encontrado" — confirmado 11/09/2026 em `ciclo-a` e `ciclo-b`, zero `REPLAY_MISS` nos dois
+- [x] Teste de determinismo passando (2 execuções idênticas) — reconfirmado 11/09/2026 no GitHub Actions real (branch `fase7`): `✅ IDÊNTICO`, 438 linhas normalizadas
+- [x] Modelo de embedding fixado, sem chamada sem versão explícita — `voyage-4`, 1024 dimensões, desde a Fase 1
+- [x] Nenhum índice vetorial aproximado; toda ordenação com desempate — confirmado pelo guardrail do `schema-hash.ts` nos 3 ambientes (passo 3)
 
 **Tratamento de erro**
-- [ ] Os 15 cenários demonstrados e registrados
-- [ ] Lista dos 5 endpoints de escrita confirmada e congelada
+- [x] Os 15 cenários demonstrados e registrados — confirmado 11/09/2026 em `ciclo-a` e `ciclo-b`: `falhas_15.hurl` `Success` (12/12) e `verify-fault-injection-log.ts` confirmam as 15/15 combinações distintas em `experiment.fault_injection_log` nos dois ambientes (ver T-064 passo 9 acima)
+- [x] Lista dos 5 endpoints de escrita confirmada e congelada — os 5 endpoints de escrita sujeitos a falha de dependência externa exercitados por `falhas_15.hurl` (verificado por leitura direta do arquivo): `entries-create`, `chat-messages-send`, `media-ocr`, `export-summary-create`, `chat-insight-create`; confirmados idênticos em `ciclo-a`/`ciclo-b`
 
 **Protótipo**
 - [x] Congelado, com hash registrado no documento de requisitos — `ux/Cerne - Prototipo Final.html`, SHA-256 `fa4e0bb9...50e5876` (completo em `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13), recebido e registrado em 10/09/2026
