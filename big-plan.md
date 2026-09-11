@@ -648,7 +648,7 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
   2. ✅ Aplicar migrações em `ciclo-a` e `ciclo-b`
   3. ✅ Gerar hash do schema dos três ambientes — **confirmar que são idênticos**
   4. ✅ `supabase test db` nos três — 100% verde
-  5. Suíte Hurl completa contra `ciclo-a` e `ciclo-b`
+  5. ✅ Suíte Hurl completa contra `ciclo-a` e `ciclo-b`
   6. Executar o roteiro em `record` **no `ciclo-a` apenas**; exportar o cache; **importar o mesmo cache no `ciclo-b`**
   7. Reexecutar o roteiro em `replay_strict` nos dois — zero `REPLAY_MISS`
   8. Job `determinism` verde
@@ -658,7 +658,16 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
   **Progresso em 10/09/2026 — ferramental dos passos 3 e 10 pronto, ainda sem execução real (mesmo bloqueio de rede/Docker de toda fase anterior):**
   - **Passo 3 (`scripts/schema-hash.ts`, novo):** nenhuma fase anterior comparou estrutura entre ambientes — só `dev` tinha sido tocado até aqui. Conecta direto no Postgres (padrão de `replay-cache-export.ts`), introspecciona só `public`/`experiment` (extensões por allowlist fechada, colunas, RLS, constraints, índices, triggers, funções, políticas, grants de tabela) e produz texto canônico + hash SHA-256. Bônus: falha alto se achar `USING hnsw`/`ivfflat` (regra nº7), não só compara cego. **Validado contra Postgres 16 real neste sandbox** (pgvector 0.6.0/pgtap 1.3.2 via apt, `auth` mockado à mão): duas bases construídas independentemente a partir das migrações 0001–0011 (+ a função de 0012 antes do ponto que precisa de `pg_cron`, indisponível via apt aqui) deram hash **idêntico**; um índice HNSW plantado de propósito foi pego e nomeado exatamente. 10/10 testes unitários novos. Cobertura das migrações que dependem de `pgmq`/`pg_net`/Storage (0013-0014, 0018-0020) fica para a execução real do Wagner, mesma nota de ambiente já registrada em `0014_export_queue.sql`.
   - **Passo 10 (`scripts/gen-handoff-docs.ts` + `scripts/build-handoff-package.sh`, novos):** o primeiro gera de fonte única (nunca à mão) `docs/handoff/taxonomia_erros.md` (de `errors.ts`), `mapa_estados_tela.md` (transcrição do único mapeamento tela↔status que os documentos-fonte definem em detalhe — `export_jobs`/RF05; registra que um mapa completo de todas as telas depende do `Requisitos_e_Fluxo_de_Telas_TCC.md` ausente), `selo_sincronizacao.md` (D9, ancorado nos campos reais `Entry.serverRevision`/`updatedAt`), `politica_defeito_D16.md` e o `README.md` índice. O segundo monta o pacote **completo** (os gerados + `contracts/openapi.yaml`, roteiro, fixtures, coleção Hurl, `bugs_conhecidos.md`) num diretório de destino externo só na hora real de publicar — deliberadamente **não duplicado dentro de `cerne-backend`** (fixtures/media/ sozinho tem ~12MB) — e nunca toca credencial nenhuma (só cria `credenciais/README.md` explicando o preenchimento manual). Testado de ponta a ponta contra um diretório vazio real (35 arquivos corretos) e as 3 guardas de erro; achou e corrigiu um bug real de path (`../..` copiado por engano do padrão de `tests/determinism/run.sh`, que vive um nível mais fundo). 8/8 testes novos.
-  - **Itens 5/6/7/8/9 do procedimento** continuam dependentes de execução real. Ficam para o Wagner rodar, seguindo `docs/roteiro_de_congelamento.md`.
+  - **Itens 6/7/8/9 do procedimento** continuam dependentes de execução real. Ficam para o Wagner rodar, seguindo `docs/roteiro_de_congelamento.md`.
+
+  **Progresso em 11/09/2026 — passo 5 confirmado, com 4 achados reais de ambiente (todos corrigidos, nenhum bug de código):**
+  - `ciclo-a`: 24/27 arquivos verdes de primeira; 3 falharam por causas de ambiente, todas corrigidas e reexecutadas com sucesso — **27/27 final**.
+  - `ciclo-b`: já com as 4 correções aplicadas de saída — **27/27 de primeira**, nenhum achado novo.
+  - **Achado 1 — "Confirm email" ligado por padrão em projeto Supabase novo na nuvem:** `supabase/config.toml` desliga isso só no stack local (`enable_confirmations = false`); não propaga via `db push`/`functions deploy`. Sem desligar manualmente (Authentication → Providers → Email), `auth-signup` não libera sessão — `account_delete.hurl` falhava com `401` em vez de `200`.
+  - **Achado 2 — `OCR_MAX_BYTES` configurado errado nos dois ambientes:** um valor de exemplo pequeno (`1024`, 1KB) tinha sido usado nos secrets em vez do valor real do plano técnico §3.6 (**`5242880`**, 5MB) — toda imagem virava `413 PAYLOAD_TOO_LARGE`, inclusive o caso que deveria dar `400 OCR_NO_TEXT`. Corrigido nos dois com `supabase secrets set ... OCR_MAX_BYTES=5242880`.
+  - **Achado 3 (não é bug) — `retry_chat.hurl` precisa rodar separado do resto**, com `REPLAY_MODE=record`/`replay` — o próprio arquivo já documentava isso; mesmo padrão usado em toda fase anterior, só não bundlar com `*.hurl`.
+  - **Achado 4 (erro meu) — variável errada no comando de gerar a fixture de OCR:** copiei o bloco de `ci.yml`/`tests/determinism` (1 variável, `ocr_image_base64`) em vez do bloco correto de `tests/hurl/README.md` para `media_ocr.hurl` (3 variáveis: `image_base64`/`_illegible`/`_oversized`).
+  - `REPLAY_MODE` ficou em `record` em `ciclo-a` e `ciclo-b` a partir daqui — necessário de qualquer forma para os passos 6/7.
 
   **Progresso em 11/09/2026 — passo 4 confirmado:** `supabase test db` rodado nos 3 ambientes pelo Wagner, resultado **idêntico** nos 3: `Files=20, Tests=127, Result: PASS`. Primeira vez que a suíte pgTAP inteira (as 20 verificações, incluindo as 8 de RLS por tabela, `experiment_rpc`, `export_queue`, `export_fault`, etc.) roda contra `ciclo-a`/`ciclo-b` de verdade.
 
@@ -697,15 +706,15 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 - [x] Migrações aplicadas, estrutura idêntica nos 3 ambientes — confirmado 11/09/2026, hash `f33a12b4...9868e2` idêntico em `dev`/`ciclo-a`/`ciclo-b` (ver T-064 passo 3 acima)
 - [x] Suíte pgTAP 100% verde — confirmado 11/09/2026: `Files=20, Tests=127, Result: PASS` idêntico em `dev`/`ciclo-a`/`ciclo-b`
 - [x] RLS forçada em todas as tabelas com dono — confirmado pelos 8 arquivos `rls_*.sql` da suíte pgTAP acima, verde nos 3 ambientes
-- [ ] Apagamento de conta sem linhas/arquivos órfãos — não reexercitado em `ciclo-a`/`ciclo-b`
+- [x] Apagamento de conta **sem linhas órfãs** — confirmado 11/09/2026 em `ciclo-a`/`ciclo-b`: `account_delete.hurl` (comportamento via API) + `account_delete_rpc.sql`/`cascade_delete.sql` (pgTAP, linhas de verdade no banco, passo 4) verdes nos 3 ambientes. ⚠️ **Achado, não corrigido:** nenhuma migração limpa arquivos do bucket `exports` no Storage quando a conta é apagada — "sem arquivos órfãos" não está coberto; reportar ao Wagner, não é uma lacuna para o agente preencher por conta própria (pode ser relevante para o RNF05/LGPD)
 - [x] Seed carregado (3 contas, datas relativas à âncora fixa) — confirmado 11/09/2026 em `ciclo-a`/`ciclo-b`: `seed.sql` sem erro, conta A com 34 entradas (33 `ready` + 1 `failed` intencional) nos dois
-- [ ] Busca semântica encontra o par plantado (RF06) — não reexercitado em `ciclo-a`/`ciclo-b` (só em `dev`, Fase 1)
+- [x] Busca semântica encontra o par plantado (RF06) — confirmado 11/09/2026 em `ciclo-a`/`ciclo-b` via `busca_semantica.hurl` (endpoint real, não só conexão direta ao banco como na prova original do T-024): busca por "ansiedade" encontra a entrada plantada nos dois ambientes
 
 **Contratos**
-- [ ] Documentação da API gerada, versionada, sem divergência
-- [ ] Taxonomia de erro fechada em 13 códigos
-- [ ] 23 endpoints com suíte de contrato passando
-- [ ] Formato do streaming validado por teste
+- [x] Documentação da API gerada, versionada, sem divergência — job `contracts` do CI verde desde a Fase 2, sem drift (`contracts/openapi.yaml` gerado de `contracts/zod/registry.ts`)
+- [x] Taxonomia de erro fechada em 13 códigos — `errors.ts`, testado desde a Fase 2
+- [x] 23 endpoints com suíte de contrato passando — confirmado 11/09/2026: 27/27 arquivos Hurl verdes em `ciclo-a` **e** `ciclo-b`
+- [x] Formato do streaming validado por teste — `sse_ordem.hurl` verde nos dois ambientes (11/09/2026)
 
 **Reprodutibilidade**
 - [ ] Roteiro de validação escrito e revisado
