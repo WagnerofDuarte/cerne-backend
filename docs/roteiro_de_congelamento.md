@@ -385,6 +385,24 @@ reconferir que ele continua verde no commit/tag que vai ser congelado —
 `workflow_dispatch` no branch `fase7` (ou já a tag, se `T-065` já tiver
 rodado), mesmo gatilho manual que a Fase 6 deixou pronto em `ci.yml`.
 
+⚠️ **Achado real, confirmado — a 1ª tentativa falhou de verdade** (não é
+sintoma de nada da Fase 7 até aqui): `GET /export-status-get/:jobId`
+(polling assíncrono do roteiro) pegou `"processing"` numa execução onde a
+outra ainda tinha `"pending"`, mesmo `jobId`, mesma posição no
+transcript — o `pg_cron` acorda em relógio de parede real, nunca
+sincronizado com o teste; as duas terminam em `"done"`, só uma tentativa
+no meio do caminho capturou o job em instantes ligeiramente diferentes.
+Corrigido em `tests/determinism/normalize.ts` (qualquer resposta
+intermediária de `export-status-get` é excluída inteira do transcript,
+não só comparada com tolerância) — commit `07ad833`.
+
+**✅ Confirmado no GitHub Actions real, 2ª tentativa (commit `07ad833`,
+branch `fase7`, `workflow_dispatch`):**
+```
+✅ IDÊNTICO — as duas execuções de roteiro_validacao.hurl produziram o mesmo resultado (438 linhas normalizadas).
+```
+Jobs `contracts` e `determinism` verdes. `T-064` passo 8 fechado.
+
 ---
 
 ## Passo 9 — `fault_injection_log`: os 15 cenários
