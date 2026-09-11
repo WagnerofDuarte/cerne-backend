@@ -643,7 +643,7 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 ## Fase 7 — Congelamento
 **Prazo: 23/09/2026**
 
-- [ ] `T-064` Procedimento de congelamento (Seção 12 do plano técnico), passos 1–10:
+- [x] `T-064` Procedimento de congelamento (Seção 12 do plano técnico), passos 1–10:
   1. ✅ `supabase db reset` no `dev` — confirmar que migrações + seed rodam do zero
   2. ✅ Aplicar migrações em `ciclo-a` e `ciclo-b`
   3. ✅ Gerar hash do schema dos três ambientes — **confirmar que são idênticos**
@@ -653,7 +653,7 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
   7. ✅ Reexecutar o roteiro em `replay_strict` nos dois — zero `REPLAY_MISS`
   8. ✅ Job `determinism` verde
   9. ✅ Conferir `fault_injection_log`: os 15 cenários registrados
-  10. Montar `docs/handoff/` (ver "Pacote entregue aos dois ciclos" abaixo)
+  10. ✅ Montar `docs/handoff/` (ver "Pacote entregue aos dois ciclos" abaixo)
 
   **Progresso em 10/09/2026 — ferramental dos passos 3 e 10 pronto, ainda sem execução real (mesmo bloqueio de rede/Docker de toda fase anterior):**
   - **Passo 3 (`scripts/schema-hash.ts`, novo):** nenhuma fase anterior comparou estrutura entre ambientes — só `dev` tinha sido tocado até aqui. Conecta direto no Postgres (padrão de `replay-cache-export.ts`), introspecciona só `public`/`experiment` (extensões por allowlist fechada, colunas, RLS, constraints, índices, triggers, funções, políticas, grants de tabela) e produz texto canônico + hash SHA-256. Bônus: falha alto se achar `USING hnsw`/`ivfflat` (regra nº7), não só compara cego. **Validado contra Postgres 16 real neste sandbox** (pgvector 0.6.0/pgtap 1.3.2 via apt, `auth` mockado à mão): duas bases construídas independentemente a partir das migrações 0001–0011 (+ a função de 0012 antes do ponto que precisa de `pg_cron`, indisponível via apt aqui) deram hash **idêntico**; um índice HNSW plantado de propósito foi pego e nomeado exatamente. 10/10 testes unitários novos. Cobertura das migrações que dependem de `pgmq`/`pg_net`/Storage (0013-0014, 0018-0020) fica para a execução real do Wagner, mesma nota de ambiente já registrada em `0014_export_queue.sql`.
@@ -674,7 +674,40 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
     congelamento (Seção 12 do plano técnico) rodam de ponta a ponta
     contra infraestrutura real (`ciclo-a`/`ciclo-b`), com todos os
     achados de ambiente documentados em `docs/roteiro_de_congelamento.md`.
-    Falta só o passo 10 (montagem do pacote de handoff) e o `T-065`/`GATE-11`.
+
+  **Progresso em 11/09/2026 — passo 10 confirmado, pacote de handoff publicado:**
+  - Repositório `cerne-backend-handoff` (privado) criado no GitHub pelo
+    Wagner (a criação via API foi recusada — `403 Resource not
+    accessible by integration`, permissão de conta que o app desta
+    sessão não tem; contornado com o Wagner criando o repositório vazio
+    e a sessão anexando/populando a partir daí).
+  - `deno run -A scripts/gen-handoff-docs.ts` + `bash
+    scripts/build-handoff-package.sh --out <clone>` rodados de ponta a
+    ponta contra o clone real (45 arquivos) — `api/openapi.yaml`,
+    `ux/` (protótipo + requisitos), `testes_contrato/` (23 arquivos
+    Hurl), `roteiro_de_validacao.md`, `fixtures/`, `bugs_conhecidos.md`
+    (vazio), `credenciais/README.md`. Nenhum código-fonte do backend
+    copiado (confirmado por leitura da listagem — `supabase/functions/`,
+    `contracts/zod/`, `scripts/` ausentes), conforme a regra inviolável.
+  - **Achado de ferramental:** `build-handoff-package.sh` recusa rodar
+    contra diretório não-vazio, mas um clone recém-feito já tem `.git/`
+    — sua própria guarda dispara nesse caso mesmo sendo exatamente o uso
+    pretendido (documentado no próprio cabeçalho do script como
+    "clone vazio"). Contornado movendo `.git/` para fora temporariamente
+    durante a montagem, sem alterar o script; fica registrado como
+    ajuste cosmético pendente, não bloqueante.
+  - `credenciais/ciclo-a.md`/`ciclo-b.md` criados com estrutura vazia,
+    depois preenchidos pelo Wagner. **2 erros de colagem encontrados e
+    corrigidos** (verificados por script — decodificação do payload JOSE
+    de cada anon key comparando o claim `ref`, e parsing da connection
+    string): a anon key de `ciclo-b` continha as chaves de `ciclo-b` e
+    `ciclo-a` coladas sem separador (4 pontos/416 caracteres em vez de
+    2/208); e a "Connection string" (Direct connection) dos dois
+    arquivos tinha a senha com `@` literal não codificado, o que corta a
+    senha no lugar errado silenciosamente (15 caracteres extraídos em
+    vez de 17) — removida essa linha nos dois arquivos, mantendo só a
+    "Session pooler" (corretamente codificada).
+  - Falta só o `T-065`/`GATE-11` (tag + proteção do branch).
 
   **Progresso em 11/09/2026 — passo 8 confirmado, com 1 achado real importante:**
   - **Achado — `export-status-get` (polling assíncrono) pode divergir entre execuções sem ser bug real:** 1ª tentativa do job `determinism` no GitHub Actions após o congelamento falhou de verdade — mesmo `jobId`, mesma posição no transcript, execução 1 pegou `"status":"processing"` onde a execução 2 ainda tinha `"pending"`. Causa: o `pg_cron` acorda em relógio de parede real, nunca sincronizado com o teste; as duas terminam em `"done"` (o que o roteiro de fato garante via `[Asserts]`), só uma tentativa intermediária no meio do caminho capturou o job em instantes ligeiramente diferentes. Mesma categoria de um achado já aceito desde a Fase 5 (o número de tentativas pode variar) — versão mais estrita, o conteúdo de uma tentativa também pode variar.
@@ -714,10 +747,16 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
     4. `backfill-seed-embeddings.ts` também exige `PROMPT_VERSION` no ambiente (entra na chave do cache de replay, T-062) — não estava documentado no roteiro original.
   - **Pendência levantada nesta sessão, resolvida em 10/09/2026:** o item "protótipo congelado, com hash registrado no documento de requisitos" do checklist final dependia de `Cerne_-_prototipo_final.html`/`Requisitos_e_Fluxo_de_Telas_TCC.md` — ausentes deste repositório desde a Fase 0. O Wagner subiu os dois direto no GitHub (`ux/Cerne - Prototipo Final.html`, `ux/Requisitos_e_Fluxo_de_Telas_TCC.md`); hash SHA-256 calculado e registrado em `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` §13 (ver checklist "Protótipo" acima). O terceiro arquivo pedido junto (`Ciencia_Orientador_Divergencias_de_Escopo.md`) foi dispensado pelo Wagner — não é uma dependência técnica de nenhuma tarefa deste backend, só um documento de gestão de risco acadêmico (registro de divergência de escopo para a orientadora, "Riscos Abertos" do `Contexto Geral.md` §24/plano iniciante §11) que eu tinha pedido junto por aparecer na mesma lista de "arquivos referenciados ausentes" sem diferenciar o motivo.
 
-- [ ] 🔴 **[MANUAL] `T-065` / `GATE-11`** — Criar a tag de congelamento e publicar o repositório de handoff
+- [x] 🔴 **[MANUAL] `T-065` / `GATE-11`** — Criar a tag de congelamento e publicar o repositório de handoff
   - **O quê:** Criar a tag `backend-v1.0-frozen`, proteger o ramo principal, publicar o repositório de handoff (somente leitura, **sem o código-fonte do backend**).
   - **Como confirmo:** tag criada, ramo protegido, repositório de handoff publicado e acessível.
   - **Progresso em 10/09/2026:** combinado com o Wagner que o repositório (`cerne-backend-handoff`, privado) será criado por mim via GitHub, assim que o restante do conteúdo estiver pronto para publicação — ainda não criado.
+  - **Concluído em 11/09/2026:**
+    - `fase7` mergeado em `main` via [PR #9](https://github.com/WagnerofDuarte/cerne-backend/pull/9) (29 commits, CI verde: `contracts` + `determinism`), depois de uma sessão paralela do Claude Code fechar um loop de documentação pendente (botão "Novo Chat") direto no mesmo branch — sem conflito, incorporado antes do merge.
+    - Repositório `cerne-backend-handoff` (privado) criado e publicado pelo Wagner (ver passo 10 acima), com o pacote completo de handoff.
+    - Tag `backend-v1.0-frozen` criada pelo Wagner via GitHub Release apontando para o commit do merge (`bb03289`) — a criação via `git push` desta sessão foi recusada com `403` (provável regra de proteção de tag), contornada com o Wagner criando a tag/release diretamente no GitHub.
+    - Branch `main` protegido pelo Wagner (GitHub → Settings → Branches).
+    - Backend oficialmente congelado — nenhuma decisão D1–D18 é reaberta a partir daqui.
 
 ---
 
@@ -733,6 +772,8 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 ## Checklist final de congelamento
 
 *(consolidado da Seção 12 do plano técnico / Seção 9 do plano iniciante — nenhum ciclo comparativo começa antes de tudo aqui estar marcado)*
+
+✅ **Todos os itens abaixo marcados em 11/09/2026 — Fase 7 (Congelamento) concluída.** Backend congelado (tag `backend-v1.0-frozen`, branch `main` protegido), pacote de handoff publicado. Nenhum ciclo comparativo (Spec Kit / BMAD-METHOD) começa antes do prazo combinado (23/09/2026), mas tecnicamente já pode.
 
 **Banco e segurança**
 - [x] Migrações aplicadas, estrutura idêntica nos 3 ambientes — confirmado 11/09/2026, hash `f33a12b4...9868e2` idêntico em `dev`/`ciclo-a`/`ciclo-b` (ver T-064 passo 3 acima)
@@ -765,10 +806,10 @@ Escrito para dar contexto a uma conversa nova que não viu a sessão em que a Fa
 - [x] Todos os estados de tela sustentados por algum endpoint — verificado em 10/09/2026, tela a tela (Seção 5.2) e critério a critério (RF01–RF10), contra os 23 endpoints reais de `contracts/zod/registry.ts`. Todas as 7 telas confirmadas sustentadas pela interação que de fato descrevem. 3 divergências encontradas e corrigidas no próprio `ux/Requisitos_e_Fluxo_de_Telas_TCC.md` (Seção 6/7 estavam na versão pré-reconciliação já sinalizada no `Contexto Geral.md`): `POST /auth/biometric-unlock` não existe (intencional, D2 — biometria é 100% local ao aparelho); tags/filtro por categoria não têm endpoint nenhum (intencional, T-015 — consistente com a própria Seção 2 do documento, que já marcava "Categorização Dinâmica" como sem implementação funcional); `PATCH`/`DELETE /entries/:id` não existem (intencional, D3 — entradas imutáveis) — o critério de aceite do RF09 que citava "editar/apagar uma entrada" foi ajustado, já que nenhuma tela descreve essa ação de fato. Nenhuma decisão D1–D18 foi reaberta — só o texto do documento de requisitos foi corrigido para bater com o backend congelado.
 
 **Entrega**
-- [ ] Repositório de entrega publicado, somente leitura
-- [ ] Tag de versão criada; branch protegida
-- [ ] Arquivo de defeitos conhecidos presente, ainda que vazio
-- [ ] Política D16 escrita e anexada ao pacote
+- [x] Repositório de entrega publicado, somente leitura — `cerne-backend-handoff` (privado), 45 arquivos, sem código-fonte do backend, confirmado 11/09/2026
+- [x] Tag de versão criada; branch protegida — `backend-v1.0-frozen` (commit `bb03289`, merge do PR #9) e `main` protegido, confirmado 11/09/2026 (`T-065`/`GATE-11` acima)
+- [x] Arquivo de defeitos conhecidos presente, ainda que vazio — `bugs_conhecidos.md` copiado para o pacote de handoff, vazio (nenhum defeito pós-congelamento registrado)
+- [x] Política D16 escrita e anexada ao pacote — `politica_defeito_D16.md` gerado e incluído no pacote de handoff
 
 ---
 
