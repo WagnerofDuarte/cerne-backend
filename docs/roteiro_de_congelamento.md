@@ -52,7 +52,12 @@ primeira vez, por projeto (`ciclo-a` e depois `ciclo-b`):
    `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `PROMPT_VERSION`, `TEST_FAULT_KEY`,
    `TEST_ACCOUNT_PASSWORD` (`Cerne-Teste-2026!`, o mesmo do seed —
    `supabase/seed/ancora.md`), `EXPORT_WORKER_SECRET` (qualquer string,
-   mesmo valor que vai para o passo 0.3 abaixo), `OCR_MAX_BYTES`.
+   mesmo valor que vai para o passo 0.3 abaixo), `OCR_MAX_BYTES`
+   (⚠️ **achado real** — o valor certo é **`5242880`**, 5MB, documentado
+   no plano técnico §3.6; um valor pequeno de exemplo digitado à mão
+   aqui fez `media_ocr.hurl` falhar com `413` em todo caso, inclusive o
+   que deveria dar `400 OCR_NO_TEXT` — corrigido em `ciclo-a` rodando
+   `supabase secrets set --project-ref <ref> OCR_MAX_BYTES=5242880`).
    ⚠️ **Decisão sua:** reaproveitar as MESMAS chaves `ANTHROPIC_API_KEY`/
    `VOYAGE_API_KEY` de `dev` (mesma conta, mesmo teto de gasto), ou gerar
    uma chave dedicada por ambiente? O big-plan não especifica. Reaproveitar
@@ -229,6 +234,13 @@ hurl --test --jobs 1 \
 
 Repetir tudo para `ciclo-b`. **Esperado:** `Success` em todos os arquivos
 nos dois ambientes.
+
+**✅ `ciclo-a` confirmado em 11/09/2026 — 27/27 arquivos verdes**, depois
+dos 4 achados acima corrigidos (Confirm email, variáveis do OCR,
+`OCR_MAX_BYTES`, `retry_chat.hurl` separado). `REPLAY_MODE` ficou em
+`record` em `ciclo-a` desde então (necessário para o passo 6 de qualquer
+forma). Faltando: repetir em `ciclo-b`, já com as 4 correções desde o
+início (não deveria achar nada novo lá).
 
 ---
 
