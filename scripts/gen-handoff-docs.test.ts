@@ -1,8 +1,11 @@
 // Teste do gerador de documentos do handoff (T-064, Fase 7).
 
 import { assert, assertEquals } from "../supabase/functions/_shared/_test_utils.ts";
+import { ENDPOINTS } from "../contracts/zod/registry.ts";
 import { ERROR_CODES, httpStatusFor, isRetryable } from "../supabase/functions/_shared/errors.ts";
+import { functionNameFor } from "./gen-openapi.ts";
 import {
+  buildMapaEndpointsMd,
   buildMapaEstadosTelaMd,
   buildPoliticaDefeitoMd,
   buildReadmeMd,
@@ -63,8 +66,30 @@ Deno.test("politica_defeito_D16.md cobre as 3 gravidades", () => {
 });
 
 Deno.test("README.md do handoff deixa explícito que o código-fonte não vai no pacote", () => {
-  const md = buildReadmeMd();
+  const md = buildReadmeMd(ENDPOINTS);
   assert(md.toLowerCase().includes("sem o código-fonte do backend"));
+});
+
+Deno.test("README.md do handoff traz a tabela caminho→função dos 23 endpoints (D-01)", () => {
+  const md = buildReadmeMd(ENDPOINTS);
+  assertEquals(ENDPOINTS.length, 23);
+  for (const contract of ENDPOINTS) {
+    const openApiPath = contract.path.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
+    assert(
+      md.includes(`\`${contract.method} ${openApiPath}\``),
+      `esperava o caminho ${contract.method} ${openApiPath} na tabela`,
+    );
+    assert(
+      md.includes(`\`${functionNameFor(contract)}\``),
+      `esperava a função ${functionNameFor(contract)} na tabela`,
+    );
+  }
+});
+
+Deno.test("buildMapaEndpointsMd explica a regra de montagem de URL (D-01)", () => {
+  const md = buildMapaEndpointsMd(ENDPOINTS);
+  assert(md.includes("Não existe roteador") || md.includes("não tem roteador"));
+  assert(md.includes("FUNCTIONS_BASE_URL"));
 });
 
 Deno.test("todos os geradores são determinísticos (mesma chamada, mesmo texto)", () => {
@@ -72,5 +97,5 @@ Deno.test("todos os geradores são determinísticos (mesma chamada, mesmo texto)
   assertEquals(buildMapaEstadosTelaMd(), buildMapaEstadosTelaMd());
   assertEquals(buildSeloSincronizacaoMd(), buildSeloSincronizacaoMd());
   assertEquals(buildPoliticaDefeitoMd(), buildPoliticaDefeitoMd());
-  assertEquals(buildReadmeMd(), buildReadmeMd());
+  assertEquals(buildReadmeMd(ENDPOINTS), buildReadmeMd(ENDPOINTS));
 });

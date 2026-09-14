@@ -58,24 +58,21 @@ jobs:
   # depende de nenhum outro job. Sinalizado, não escondido: `db`/`api`
   # dedicados continuam uma lacuna real deste CI, pré-existente.
   #
-  # NÃO VALIDADO CONTRA O GITHUB ACTIONS DE VERDADE (mesmo bloqueio de
-  # Docker/rede que impediu `supabase start` neste sandbox durante todas as
-  # fases anteriores) — a lógica que decide passa/falha
-  # (tests/determinism/normalize.ts/compare.ts) foi validada de ponta a
-  # ponta contra relatórios reais do `hurl` 6.1.1 nesta sessão; a
-  # orquestração abaixo (supabase CLI, secrets) segue o mesmo padrão já
-  # confirmado por comando pelo Wagner nas suítes Hurl das Fases 3-5, mas
-  # precisa da 1ª execução real (gate manual) para confirmar de fato.
-  #
-  # PRÉ-REQUISITO ainda pendente (GATE-07, Fase 0): faltam secrets no
-  # repositório GitHub — os 6 já cadastrados (SUPABASE_URL/ANON_KEY/
+  # VALIDADO CONTRA O GITHUB ACTIONS DE VERDADE em 11/09/2026 (Fase 7,
+  # T-064): 1ª execução real deste job, secrets já cadastrados no
+  # repositório GitHub (os 9 necessários: SUPABASE_URL/ANON_KEY/
   # SERVICE_ROLE_KEY, ANTHROPIC_API_KEY, VOYAGE_API_KEY, SUPABASE_ACCESS_
-  # TOKEN) não bastam; faltam TEST_FAULT_KEY, PROMPT_VERSION,
-  # TEST_ACCOUNT_PASSWORD (Fase 0 já previa esses 3) e EXPORT_WORKER_SECRET
-  # (novo desde a Fase 5) — REPLAY_MODE/OCR_MAX_BYTES não são necessários
-  # aqui (REPLAY_MODE é setado pelo próprio run.sh por passada; OCR_MAX_BYTES
-  # só importa pra suíte Hurl comum, não para este roteiro). Sem eles este
-  # job falha na autenticação/na chamada de IA, não no mecanismo em si.
+  # TOKEN, TEST_FAULT_KEY, PROMPT_VERSION, TEST_ACCOUNT_PASSWORD e
+  # EXPORT_WORKER_SECRET — REPLAY_MODE/OCR_MAX_BYTES não entram aqui:
+  # REPLAY_MODE é setado pelo próprio run.sh por passada, OCR_MAX_BYTES só
+  # importa pra suíte Hurl comum, não para este roteiro). A lógica que
+  # decide passa/falha (tests/determinism/normalize.ts/compare.ts) foi
+  # validada de ponta a ponta contra relatórios reais do `hurl` 6.1.1 nessa
+  # execução e permanece verde desde então (ver o próprio
+  # `tests/determinism/normalize.ts`, achado real registrado inline dessa
+  # 1ª execução) — corrigido D-24
+  # (docs/backend/DIVERGENCIAS_E_INCONSISTENCIAS.md), este comentário
+  # estava desatualizado (falava de secrets ainda faltando).
   determinism:
     runs-on: ubuntu-latest
     steps:
