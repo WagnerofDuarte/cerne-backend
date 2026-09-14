@@ -18,6 +18,19 @@ function pathToOpenApi(path: string): string {
   return path.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
 }
 
+// D-01 (docs/backend/DIVERGENCIAS_E_INCONSISTENCIAS.md) — este `path` é só
+// notação do contrato; não existe roteador nenhum servindo essas URLs. Cada
+// endpoint é uma Edge Function própria, e o nome do diretório segue sempre
+// o `id` do contrato com "." trocado por "-" (`entries.get` ->
+// `entries-get`) — confirmado nos 23 diretórios de `supabase/functions/` e
+// documentado no comentário de cada `index.ts` ("só fiação, ver
+// `auth-signup/index.ts`"). Usado tanto para o `x-cerne-function` de cada
+// operação quanto para a tabela em `docs/handoff/README.md`
+// (`gen-handoff-docs.ts`).
+export function functionNameFor(contract: EndpointContract): string {
+  return contract.id.replace(/\./g, "-");
+}
+
 function pathParamNames(path: string): string[] {
   return [...path.matchAll(/:([A-Za-z0-9_]+)/g)]
     .map((m) => m[1])
@@ -76,6 +89,9 @@ function buildOperation(contract: EndpointContract): JsonSchema {
     summary: contract.summary,
     // Endpoints sem sessão prévia (signup/login/refresh) não exigem Bearer.
     security: contract.auth ? [{ bearerAuth: [] }] : [],
+    // D-01: aponta pro diretório real da Edge Function — o `path` acima é
+    // só notação REST do contrato, ver `servers`/`info.description`.
+    "x-cerne-function": functionNameFor(contract),
   };
 
   const parameters = buildParameters(contract);
@@ -105,11 +121,34 @@ export function buildOpenApiDocument(): JsonSchema {
     info: {
       title: "Cerne Backend API",
       description:
-        "GERADO por scripts/gen-openapi.ts a partir de contracts/zod/ (T-026) — não editar à mão.",
+        "GERADO por scripts/gen-openapi.ts a partir de contracts/zod/ (T-026) — não editar " +
+        "à mão.\n\n" +
+        "**Como montar a URL real (D-01):** não existe roteador — cada operação é " +
+        "servida por uma Edge Function própria, uma por endpoint. O `path` de cada " +
+        "operação abaixo é só notação REST do contrato; a URL de verdade é " +
+        "`{FUNCTIONS_BASE_URL}/<x-cerne-function>/<parâmetros de path, na mesma ordem " +
+        "em que aparecem no `path`, como segmentos finais>` — qualquer segmento " +
+        "literal do `path` depois do último parâmetro (ex.: o `/retry` de " +
+        "`/chat/sessions/{id}/messages/{userMessageId}/retry`) NÃO aparece na URL " +
+        "real. Cada operação carrega o nome da função em `x-cerne-function`; a " +
+        "tabela completa caminho→função está em `docs/handoff/README.md`.",
       // "1.0.0" ecoa a tag de congelamento do backend (T-065,
       // `backend-v1.0-frozen`) — não é um número escolhido à toa.
       version: "1.0.0",
     },
+    servers: [
+      {
+        url: "{FUNCTIONS_BASE_URL}",
+        variables: {
+          FUNCTIONS_BASE_URL: {
+            default: "https://<project-ref>.functions.supabase.co",
+            description: "Base das Edge Functions do ambiente (dev/ciclo-a/ciclo-b) — o " +
+              "`project ref` de cada ambiente está no pacote de credenciais " +
+              "(`credenciais/README.md`), nunca neste arquivo gerado.",
+          },
+        },
+      },
+    ],
     paths,
     components: {
       securitySchemes: {

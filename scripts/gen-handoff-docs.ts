@@ -41,6 +41,8 @@
 //
 // Uso: deno run -A scripts/gen-handoff-docs.ts
 
+import { functionNameFor } from "./gen-openapi.ts";
+import { type EndpointContract, ENDPOINTS } from "../contracts/zod/registry.ts";
 import {
   ERROR_CODES,
   type ErrorCode,
@@ -144,13 +146,34 @@ export function buildSeloSincronizacaoMd(): string {
   );
 }
 
-export function buildReadmeMd(): string {
+export function buildMapaEndpointsMd(endpoints: readonly EndpointContract[]): string {
+  const linhas = endpoints.map((contract) => {
+    const openApiPath = contract.path.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
+    return `| \`${contract.method} ${openApiPath}\` | \`${functionNameFor(contract)}\` |`;
+  });
+
+  return (
+    "## Caminho do contrato → função (D-01)\n\n" +
+    "`contracts/openapi.yaml` não tem roteador: cada operação é servida por uma " +
+    "Edge Function própria, sob `{FUNCTIONS_BASE_URL}/<função>` (ver `servers` e " +
+    "`x-cerne-function` de cada operação no próprio YAML), **nunca** o caminho REST " +
+    "abaixo direto. Parâmetros de path entram como segmentos finais da URL, na mesma " +
+    "ordem em que aparecem no caminho; qualquer segmento literal depois do último " +
+    "parâmetro (ex.: o `/retry` de `chat.messages.retry`) não existe na URL real.\n\n" +
+    "| Caminho do contrato | Função (`{FUNCTIONS_BASE_URL}/<função>`) |\n|---|---|\n" +
+    linhas.join("\n") +
+    "\n\n"
+  );
+}
+
+export function buildReadmeMd(endpoints: readonly EndpointContract[]): string {
   return (
     GENERATED_BANNER +
     "# Pacote de handoff — backend Cerne\n\n" +
     "Entregue **igual** aos dois ciclos comparativos (Spec Kit e BMAD-METHOD), " +
     "**sem o código-fonte do backend** — evita assimetria de informação entre os " +
     "dois ciclos, que veriam a implementação de referência se o código vazasse.\n\n" +
+    buildMapaEndpointsMd(endpoints) +
     "## Conteúdo\n\n" +
     "Gerado por `scripts/gen-handoff-docs.ts` (este diretório, versionado em " +
     "`cerne-backend`):\n" +
@@ -213,7 +236,7 @@ async function main() {
   await writeFile("mapa_estados_tela.md", buildMapaEstadosTelaMd());
   await writeFile("selo_sincronizacao.md", buildSeloSincronizacaoMd());
   await writeFile("politica_defeito_D16.md", buildPoliticaDefeitoMd());
-  await writeFile("README.md", buildReadmeMd());
+  await writeFile("README.md", buildReadmeMd(ENDPOINTS));
   console.log("\nPronto. Ver README.md gerado para o restante do pacote (copiado só no GATE-11).");
 }
 

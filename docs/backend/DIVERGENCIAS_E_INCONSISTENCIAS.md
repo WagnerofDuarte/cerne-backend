@@ -4,9 +4,29 @@
 > e 13 de [`DOCUMENTACAO_DIDATICA.md`](DOCUMENTACAO_DIDATICA.md), que apenas
 > **reportam**. Aqui cada item ganha uma proposta de solução.
 >
-> **Nada aqui foi aplicado.** São propostas para decisão do Wagner. O backend
-> está congelado em `backend-v1.0-frozen`; qualquer mudança entra por PR
-> (`CLAUDE.md`).
+> **Nada aqui foi aplicado**, exceto os três itens abaixo. São propostas para
+> decisão do Wagner. O backend está congelado em `backend-v1.0-frozen`;
+> qualquer mudança entra por PR (`CLAUDE.md`).
+>
+> **Resolvidos em 14/09/2026, antes do início do ciclo-a** (validação pedida
+> pelo Wagner: os três abaixo ameaçavam a validade do experimento ou a
+> credibilidade do próprio instrumento de CI — os demais P2/P3/P4 não
+> bloqueiam o início e ficam para decisão posterior, ver seção "Quadro-resumo"):
+> - **D-01** (P1) — `scripts/gen-openapi.ts` agora emite `servers:` +
+>   `x-cerne-function` por operação, com teste que barra regressão da
+>   convenção; tabela caminho→função publicada em `docs/handoff/README.md`.
+> - **D-24** (P2) — comentário do `ci.yml` corrigido: os secrets já estavam
+>   cadastrados desde 11/09/2026 (1ª execução real do job `determinism`,
+>   confirmada em `tests/determinism/normalize.ts`).
+> - **D-25** (P2) — `docs/roteiro_de_validacao.md` atualizado para
+>   "Aprovado por Wagner em 10/09/2026".
+>
+> ⚠️ **Pendência de publicação:** o pacote de handoff já entregue em
+> `cerne-backend-handoff` (GATE-11) foi gerado **antes** desta correção —
+> contém o `openapi.yaml`/README.md antigos. Republicar
+> (`build-handoff-package.sh`) antes de liberar o ciclo-a para quem for
+> gerar cliente a partir do OpenAPI, ou o defeito de D-01 continua valendo
+> na prática apesar da correção aqui.
 
 ## Sumário
 
@@ -45,10 +65,10 @@ reabrir o congelamento com cuidado) do que só muda documento ou arquivo gerado.
 
 | ID | Assunto | Prioridade | Toca backend? | Custo |
 |---|---|---|---|---|
-| D-01 | OpenAPI publica caminhos inexistentes, sem `servers:` | **P1** | não (gerador/doc) | baixo |
+| D-01 | OpenAPI publica caminhos inexistentes, sem `servers:` | **P1** — ✅ resolvido 14/09/2026 | não (gerador/doc) | baixo |
 | D-07 | `selo_sincronizacao.md` promete sinal por entrada que não existe | **P2** | não (gerador) | baixo |
-| D-24 | Contradição de status entre `ci.yml` e `normalize.ts` | **P2** | não (comentário) | trivial |
-| D-25 | Roteiro de validação marcado como rascunho | **P2** | não (doc) | trivial |
+| D-24 | Contradição de status entre `ci.yml` e `normalize.ts` | **P2** — ✅ resolvido 14/09/2026 | não (comentário) | trivial |
+| D-25 | Roteiro de validação marcado como rascunho | **P2** — ✅ resolvido 14/09/2026 | não (doc) | trivial |
 | D-02 | Ordem de `paths` no YAML | P3 | não (gerador) | baixo |
 | D-03 | Códigos fora do `errorCodeEnum` | P3 | não (contrato/doc) | baixo |
 | D-04 | `similarity` pode ser negativo | P3 | sim (1 linha) | baixo |

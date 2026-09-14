@@ -7,15 +7,18 @@
 
 import { assert, assertEquals } from "../supabase/functions/_shared/_test_utils.ts";
 import { ENDPOINTS } from "../contracts/zod/registry.ts";
-import { buildOpenApiDocument } from "./gen-openapi.ts";
+import { buildOpenApiDocument, functionNameFor } from "./gen-openapi.ts";
 
 interface Operation {
   security: unknown[];
   parameters?: Array<{ name: string; in: string; required: boolean; schema: unknown }>;
   requestBody?: { content: Record<string, unknown> };
   responses: Record<string, { content?: Record<string, unknown> }>;
+  "x-cerne-function": string;
 }
 type Doc = {
+  info: { description: string };
+  servers: Array<{ url: string; variables: Record<string, { default: string }> }>;
   paths: Record<string, Record<string, Operation>>;
   components: { schemas: { Error: { required: string[] } } };
 };
@@ -87,6 +90,44 @@ Deno.test("components.schemas.Error tem os 4 campos do envelope de erro (§3.2)"
     new Set(doc.components.schemas.Error.required),
     new Set(["code", "message", "retryable", "requestId"]),
   );
+});
+
+Deno.test("D-01: servers: traz FUNCTIONS_BASE_URL, não fica implícito", () => {
+  const doc = buildOpenApiDocument() as unknown as Doc;
+  assertEquals(doc.servers.length, 1);
+  assertEquals(doc.servers[0]?.url, "{FUNCTIONS_BASE_URL}");
+  assert(doc.servers[0]?.variables.FUNCTIONS_BASE_URL?.default);
+});
+
+Deno.test("D-01: toda operação carrega x-cerne-function, e é o id do contrato com '.' -> '-'", () => {
+  const doc = buildOpenApiDocument() as unknown as Doc;
+  for (const contract of ENDPOINTS) {
+    const openApiPath = contract.path.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
+    const op = operationAt(doc, openApiPath, contract.method.toLowerCase());
+    assertEquals(op["x-cerne-function"], functionNameFor(contract));
+    assertEquals(op["x-cerne-function"], contract.id.replace(/\./g, "-"));
+  }
+});
+
+Deno.test("D-01: x-cerne-function de cada operação é um diretório real em supabase/functions/", async () => {
+  const dirs = new Set<string>();
+  for await (const entry of Deno.readDir(new URL("../supabase/functions/", import.meta.url))) {
+    if (entry.isDirectory) dirs.add(entry.name);
+  }
+  for (const contract of ENDPOINTS) {
+    const fnName = functionNameFor(contract);
+    assert(
+      dirs.has(fnName),
+      `${contract.id} -> x-cerne-function "${fnName}" não bate com nenhum diretório em ` +
+        "supabase/functions/ — convenção quebrou, ver D-01",
+    );
+  }
+});
+
+Deno.test("D-01: info.description explica como montar a URL real e cita x-cerne-function", () => {
+  const doc = buildOpenApiDocument() as unknown as Doc;
+  assert(doc.info.description.includes("x-cerne-function"));
+  assert(doc.info.description.includes("FUNCTIONS_BASE_URL"));
 });
 
 Deno.test("todo endpoint com requestBody gera requestBody.content['application/json'] no OpenAPI", () => {
